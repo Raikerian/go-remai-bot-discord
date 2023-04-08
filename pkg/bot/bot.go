@@ -114,14 +114,14 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 		return
 	}
 
-	if m.Content == "" {
-		// Check that your bot has Bot -> Message Content Intent enabled in the discord developer portal
-		log.Printf("[CHID: %s, MID: %s] Empty message content detected, possible reason: bot is lacking `IntentMessageContent` permissions\n", m.ChannelID, m.ID)
+	if _, exists := ignoredChannelsCache[m.ChannelID]; exists {
+		// skip over ignored channels list
 		return
 	}
 
-	// Check if channel is on the ignore list
-	if _, exists := ignoredChannelsCache[m.ChannelID]; exists {
+	if m.Content == "" {
+		// Check that your bot has Bot -> Message Content Intent enabled in the discord developer portal
+		log.Printf("[CHID: %s, MID: %s] Empty message content detected, possible reason: bot is lacking `IntentMessageContent` permissions\n", m.ChannelID, m.ID)
 		return
 	}
 
@@ -148,9 +148,15 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 			for {
 				// Get messages in batches of 100 (maximum allowed by Discord API)
 				batch, _ := s.ChannelMessages(ch.ID, 100, lastID, "", "")
-				// if err != nil {
-				// 	return nil, err
-				// }
+				if err != nil {
+					// Since we cannot fetch messages, that means we cannot determine whether this a GPT thread,
+					// and if it was, we cannot get the full context to provide a better user experience. Silently return
+					// and print the error in the log
+					// TODO: in the unfortunate event of discord API failing, we will cache this thread as non GPT thread and
+					// will ignore it until bot is restarted. In this particular event I believe its fair to not cache it to ignored list
+					isGPTThread = false
+					break
+				}
 
 				transformed := make([]openai.ChatCompletionMessage, len(batch))
 				for i, value := range batch {
