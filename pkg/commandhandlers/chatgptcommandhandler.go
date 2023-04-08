@@ -9,7 +9,7 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
-func ChatGPTCommandHandler(openaiClient *openai.Client, gptModel string) func(s *discord.Session, i *discord.InteractionCreate) {
+func ChatGPTCommandHandler(openaiClient *openai.Client, gptModel string, messagesCache *map[string][]openai.ChatCompletionMessage) func(s *discord.Session, i *discord.InteractionCreate) {
 	return func(s *discord.Session, i *discord.InteractionCreate) {
 		iData := i.ApplicationCommandData()
 		if len(iData.Options) < 0 {
@@ -38,6 +38,6 @@ func ChatGPTCommandHandler(openaiClient *openai.Client, gptModel string) func(s 
 			log.Fatalf("Error: %v", err)
 		}
 
-		handlers.ChatGPT(openaiClient, gptModel, s, m.ChannelID, m.ID, i.Interaction.Member.User.Username, lastOptionValue, nil, nil)
+		handlers.ChatGPT(openaiClient, gptModel, s, m.ChannelID, m.ID, i.Interaction.Member.User.Username, lastOptionValue, nil, messagesCache)
 	}
 }

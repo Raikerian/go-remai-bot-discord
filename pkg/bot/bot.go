@@ -15,20 +15,24 @@ type Bot struct {
 	session         *discord.Session
 	openaiClient    *openai.Client
 	commandHandlers map[string]func(s *discord.Session, i *discord.InteractionCreate)
+	messagesCache   map[string][]openai.ChatCompletionMessage
 }
-
-var messagesCache map[string][]openai.ChatCompletionMessage = make(map[string][]openai.ChatCompletionMessage)
 
 func NewBot(session *discord.Session, openaiClient *openai.Client) *Bot {
 	return &Bot{
 		session:         session,
 		openaiClient:    openaiClient,
 		commandHandlers: make(map[string]func(s *discord.Session, i *discord.InteractionCreate)),
+		messagesCache:   make(map[string][]openai.ChatCompletionMessage),
 	}
 }
 
 func (b *Bot) RegisterCommandHandler(name string, handler func(s *discord.Session, i *discord.InteractionCreate)) {
 	b.commandHandlers[name] = handler
+}
+
+func (b *Bot) MessagesCache() *map[string][]openai.ChatCompletionMessage {
+	return &b.messagesCache
 }
 
 func (b *Bot) Run(commands []*discord.ApplicationCommand, guildID string, removeCommands bool) {
@@ -108,7 +112,7 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 	if ch, err := s.State.Channel(m.ChannelID); err != nil || ch.IsThread() {
 		log.Println("Message received: " + m.Content + " from " + m.Author.Username)
 
-		if messagesCache[m.ChannelID] == nil {
+		if b.messagesCache[m.ChannelID] == nil {
 			var (
 				lastID string
 			)
@@ -140,7 +144,7 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 				}
 
 				// Add the messages to the beginning of the main list
-				messagesCache[m.ChannelID] = append(transformed, messagesCache[m.ChannelID]...)
+				b.messagesCache[m.ChannelID] = append(transformed, b.messagesCache[m.ChannelID]...)
 
 				// If there are no more messages in the thread, break the loop
 				if len(batch) == 0 {
@@ -152,7 +156,7 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 			}
 		}
 
-		handlers.ChatGPT(b.openaiClient, getModelFromTitle(ch.Name), s, m.ChannelID, m.ID, m.Author.Username, m.Content, m.Reference(), &messagesCache)
+		handlers.ChatGPT(b.openaiClient, getModelFromTitle(ch.Name), s, m.ChannelID, m.ID, m.Author.Username, m.Content, m.Reference(), &b.messagesCache)
 	}
 }
 

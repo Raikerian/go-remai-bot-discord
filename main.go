@@ -97,8 +97,8 @@ func main() {
 	b := bot.NewBot(discordSession, openaiClient)
 
 	// Register command handlers
-	b.RegisterCommandHandler(chatGPT3Command.Name, commandhandlers.ChatGPTCommandHandler(openaiClient, openai.GPT3Dot5Turbo))
-	b.RegisterCommandHandler(chatGPT4Command.Name, commandhandlers.ChatGPTCommandHandler(openaiClient, openai.GPT4))
+	b.RegisterCommandHandler(chatGPT3Command.Name, commandhandlers.ChatGPTCommandHandler(openaiClient, openai.GPT3Dot5Turbo, b.MessagesCache()))
+	b.RegisterCommandHandler(chatGPT4Command.Name, commandhandlers.ChatGPTCommandHandler(openaiClient, openai.GPT4, b.MessagesCache()))
 
 	// Run the bot
 	b.Run(commands, *GuildID, *RemoveCommands)
