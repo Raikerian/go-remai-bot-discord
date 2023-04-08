@@ -61,6 +61,12 @@ var (
 			},
 			{
 				Type:        discord.ApplicationCommandOptionString,
+				Name:        commandhandlers.ChatGPTCommandOptionContext,
+				Description: "Sets context that guides the AI assistant's behavior during the conversation",
+				Required:    false,
+			},
+			{
+				Type:        discord.ApplicationCommandOptionString,
 				Name:        commandhandlers.ChatGPTCommandOptionModel,
 				Description: "GPT model",
 				Required:    false,

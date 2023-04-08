@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	ChatGPTCommandOptionPrompt = "prompt"
-	ChatGPTCommandOptionModel  = "model"
+	ChatGPTCommandOptionPrompt  = "prompt"
+	ChatGPTCommandOptionContext = "context"
+	ChatGPTCommandOptionModel   = "model"
 )
 
 func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *map[string][]openai.ChatCompletionMessage) func(s *discord.Session, i *discord.InteractionCreate) {
@@ -44,6 +45,16 @@ func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *map[strin
 			return
 		}
 
+		response := fmt.Sprintf("<@%s> asked:\n> %s", i.Member.User.ID, prompt)
+
+		// Set context of the conversation as a system message
+		var context string
+		if option, ok := optionMap[ChatGPTCommandOptionContext]; ok {
+			context = option.StringValue()
+			response += fmt.Sprintf("\nand provided the following context:\n> %s", context)
+			log.Printf("[i.ID: %s] Context provided: %s\n", i.Interaction.ID, context)
+		}
+
 		model := constants.DefaultGPTModel
 		if option, ok := optionMap[ChatGPTCommandOptionModel]; ok {
 			model = option.StringValue()
@@ -51,7 +62,7 @@ func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *map[strin
 		}
 
 		// Respond to interaction with a reference and user ping
-		interactrionRespond(s, i.Interaction, fmt.Sprintf("<@%s> asked:\n> %s", i.Member.User.ID, prompt))
+		interactrionRespond(s, i.Interaction, response)
 
 		// Get interaction ID so we can create a thread on top of it
 		m, err := s.InteractionResponse(i.Interaction)
@@ -94,6 +105,14 @@ func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *map[strin
 				// Maybe in the future just try to post a new message instead, but for now just cancel
 				log.Printf("[i.ID: %s] Failed to reply in the thread with the error: %v\n", i.Interaction.ID, err)
 				return
+			}
+
+			// Set context of the conversation as a system message
+			if context != "" {
+				(*messagesCache)[thread.ID] = append((*messagesCache)[thread.ID], openai.ChatCompletionMessage{
+					Role:    openai.ChatMessageRoleSystem,
+					Content: context,
+				})
 			}
 
 			handlers.ChatGPTRequest(handlers.ChatGPTHandlerParams{
