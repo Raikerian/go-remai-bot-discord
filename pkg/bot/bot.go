@@ -19,7 +19,7 @@ type Bot struct {
 	session         *discord.Session
 	openaiClient    *openai.Client
 	commandHandlers map[string]func(s *discord.Session, i *discord.InteractionCreate)
-	messagesCache   lru.Cache[string, *cache.ChatGPTMessagesCache]
+	messagesCache   *lru.Cache[string, *cache.ChatGPTMessagesCache]
 }
 
 var ignoredChannelsCache = make(map[string]struct{})
@@ -33,7 +33,7 @@ func NewBot(session *discord.Session, openaiClient *openai.Client) *Bot {
 		session:         session,
 		openaiClient:    openaiClient,
 		commandHandlers: make(map[string]func(s *discord.Session, i *discord.InteractionCreate)),
-		messagesCache:   *cache,
+		messagesCache:   cache,
 	}
 }
 
@@ -42,7 +42,7 @@ func (b *Bot) RegisterCommandHandler(name string, handler func(s *discord.Sessio
 }
 
 func (b *Bot) MessagesCache() *lru.Cache[string, *cache.ChatGPTMessagesCache] {
-	return &b.messagesCache
+	return b.messagesCache
 }
 
 func (b *Bot) Run(commands []*discord.ApplicationCommand, guildID string, removeCommands bool) {
@@ -262,7 +262,7 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 			DiscordSession:   s,
 			DiscordChannelID: m.ChannelID,
 			DiscordMessageID: channelMessage.ID,
-			MessagesCache:    &b.messagesCache,
+			MessagesCache:    b.messagesCache,
 		})
 	}
 }
