@@ -12,7 +12,7 @@ func ToggleDiscordThreadLock(s *discord.Session, channelID string, locked bool) 
 		Locked: &locked,
 	})
 	if err != nil {
-		log.Printf("[CHID: %s] Failed to lock/unlock Thread with the error: %v", channelID, err)
+		log.Printf("[CHID: %s] Failed to lock/unlock Thread with the error: %v\n", channelID, err)
 	}
 	return
 }

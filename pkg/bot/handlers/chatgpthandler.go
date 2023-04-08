@@ -20,7 +20,7 @@ type ChatGPTHandlerParams struct {
 }
 
 func ChatGPTRequest(params ChatGPTHandlerParams) {
-	log.Printf("[CHID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v", params.DiscordChannelID, params.GPTModel, len(*params.MessagesCache))
+	log.Printf("[CHID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", params.DiscordChannelID, params.GPTModel, len(*params.MessagesCache))
 
 	// Prepare message
 	if params.MessagesCache == nil {
@@ -43,14 +43,14 @@ func ChatGPTRequest(params ChatGPTHandlerParams) {
 	)
 	if err != nil {
 		// ChatGPT failed for whatever reason, tell users about it
-		log.Printf("[CHID: %s] ChatGPT request ChatCompletion failed with the error: %v", params.DiscordChannelID, err)
+		log.Printf("[CHID: %s] ChatGPT request ChatCompletion failed with the error: %v\n", params.DiscordChannelID, err)
 		discordChannelMessageEdit(params.DiscordSession, params.DiscordMessageID, params.DiscordChannelID, fmt.Sprintf("❌ ChatGPT request ChatCompletion failed with the error: %v", err))
 		return
 	}
 
 	// Save response to context cache
 	responseContent := resp.Choices[0].Message.Content
-	log.Printf("[CHID: %s] ChatGPT Request [Model: %s] responded with a message: %s", params.DiscordChannelID, params.GPTModel, responseContent)
+	log.Printf("[CHID: %s] ChatGPT Request [Model: %s] responded with a message: %s\n", params.DiscordChannelID, params.GPTModel, responseContent)
 	(*params.MessagesCache)[params.DiscordChannelID] = append((*params.MessagesCache)[params.DiscordChannelID], openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleAssistant,
 		Content: responseContent,
@@ -68,6 +68,6 @@ func discordChannelMessageEdit(s *discord.Session, messageID string, channelID s
 		},
 	)
 	if err != nil {
-		log.Printf("[CHID: %s] Failed to edit message [MID: %s] with the error: %v", channelID, messageID, err)
+		log.Printf("[CHID: %s] Failed to edit message [MID: %s] with the error: %v\n", channelID, messageID, err)
 	}
 }

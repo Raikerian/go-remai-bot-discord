@@ -20,6 +20,8 @@ type Bot struct {
 	messagesCache   map[string][]openai.ChatCompletionMessage
 }
 
+var ignoredChannelsCache = make(map[string]struct{})
+
 func NewBot(session *discord.Session, openaiClient *openai.Client) *Bot {
 	return &Bot{
 		session:         session,
@@ -49,7 +51,11 @@ func (b *Bot) Run(commands []*discord.ApplicationCommand, guildID string, remove
 			h(s, i)
 		}
 	})
+
 	b.session.AddHandler(b.handleMessageCreate)
+
+	// IntentMessageContent is required for us to have a conversation in threads without typing any commands
+	b.session.Identify.Intents = discord.MakeIntent(discord.IntentsAllWithoutPrivileged | discord.IntentMessageContent)
 
 	// Run the bot
 	err := b.session.Open()
@@ -57,6 +63,7 @@ func (b *Bot) Run(commands []*discord.ApplicationCommand, guildID string, remove
 		log.Fatalf("Cannot open the session: %v", err)
 	}
 
+	// Register commands
 	log.Println("Adding commands...")
 	registeredCommands := make([]*discord.ApplicationCommand, len(commands))
 	for i, v := range commands {
@@ -74,6 +81,7 @@ func (b *Bot) Run(commands []*discord.ApplicationCommand, guildID string, remove
 	log.Println("Press Ctrl+C to exit")
 	<-stop
 
+	// Unregister commands if requested
 	if removeCommands {
 		b.removeCommands(registeredCommands, guildID)
 	}
@@ -107,8 +115,13 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 	}
 
 	if m.Content == "" {
-		// TODO: handle empty content
-		log.Fatalf("Message from " + m.Author.Username + " is empty.")
+		// Check that your bot has Bot -> Message Content Intent enabled in the discord developer portal
+		log.Printf("[CHID: %s, MID: %s] Empty message content detected, possible reason: bot is lacking `IntentMessageContent` permissions\n", m.ChannelID, m.ID)
+		return
+	}
+
+	// Check if channel is on the ignore list
+	if _, exists := ignoredChannelsCache[m.ChannelID]; exists {
 		return
 	}
 
@@ -116,17 +129,22 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 		if err != nil {
 			// We need to be sure that it's a thread, and since we failed to fetch channel
 			// we just log the error and move on
-			log.Printf("[CHID: %s] Failed to get channel info with the error: %v", m.ChannelID, err)
+			log.Printf("[CHID: %s, MID: %s] Failed to get channel info with the error: %v\n", m.ChannelID, m.ID, err)
 			return
 		}
 
-		log.Println("Message received: " + m.Content + " from " + m.Author.Username)
+		if ch.ThreadMetadata.Locked || ch.ThreadMetadata.Archived {
+			// We don't want to handle messages in locked or archived threads
+			log.Printf("[CHID: %s] Ignoring new message [MID: %s] in a potential thread as it is locked or/and archived\n", m.ChannelID, m.ID)
+			return
+		}
+
+		log.Printf("[CHID: %s] Handling new message [MID: %s] in a thread\n", m.ChannelID, m.ID)
 
 		if b.messagesCache[m.ChannelID] == nil {
-			var (
-				lastID string
-			)
+			isGPTThread := true
 
+			var lastID string
 			for {
 				// Get messages in batches of 100 (maximum allowed by Discord API)
 				batch, _ := s.ChannelMessages(ch.ID, 100, lastID, "", "")
@@ -143,9 +161,18 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 					content := value.Content
 					// First message is always a referenced message
 					// Check if it is, and then modify to get the original prompt
-					if value.ReferencedMessage != nil {
+					if value.Type == discord.MessageTypeThreadStarterMessage {
+						if value.Author.ID != s.State.User.ID {
+							// this is not gpt thread, ignore
+							// since we are wasting here a total request to discord API, need to refactor so we always fetch messages from the oldest first
+							// TODO: fetch oldest first from discord api
+							isGPTThread = false
+							break
+						}
 						role = openai.ChatMessageRoleUser
-						content = strings.TrimPrefix(strings.Join(strings.Split(value.ReferencedMessage.Content, "\n")[1:], "\n"), "> ")
+						if value.ReferencedMessage != nil {
+							content = strings.TrimPrefix(strings.Join(strings.Split(value.ReferencedMessage.Content, "\n")[1:], "\n"), "> ")
+						}
 					}
 					transformed[len(batch)-i-1] = openai.ChatCompletionMessage{
 						Role:    role,
@@ -163,6 +190,16 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 
 				// Set the lastID to the last message's ID to get the next batch of messages
 				lastID = batch[len(batch)-1].ID
+			}
+
+			if !isGPTThread {
+				// this was not a GPT thread, clear cache in case and move on
+				// TODO: remove cache clear when above request is fixed to have oldest first, as we wont have any cache that way
+				b.messagesCache[m.ChannelID] = nil
+				log.Printf("[CHID: %s] Not a GPT thread, saving to ignored cache to skip over it later", m.ChannelID)
+				// save threadID to cache, so we can always ignore it later
+				ignoredChannelsCache[m.ChannelID] = struct{}{}
+				return
 			}
 		}
 
