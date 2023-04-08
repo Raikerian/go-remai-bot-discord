@@ -8,8 +8,8 @@
 set -e
 
 # Set up your API tokens here
-DISCORD_TOKEN=""
-OPENAI_TOKEN=""
+DISCORD_TOKEN="${DISCORD_TOKEN:-""}"
+OPENAI_TOKEN="${OPENAI_TOKEN:-""}"
 
 IMAGE_NAME="${PWD##*/}"
 
