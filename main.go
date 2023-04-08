@@ -28,7 +28,7 @@ var (
 
 func init() {
 	log.SetOutput(os.Stdout)
-	log.SetFlags(log.Lshortfile)
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	var err error
 	discordSession, err = discord.New("Bot " + *BotToken)
