@@ -156,7 +156,7 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 			}
 		}
 
-		handlers.ChatGPT(b.openaiClient, getModelFromTitle(ch.Name), s, m.ChannelID, m.ID, m.Author.Username, m.Content, m.Reference(), &b.messagesCache)
+		handlers.HandleChatGPTRequest(b.openaiClient, getModelFromTitle(ch.Name), s, m.ChannelID, m.ID, m.Author.Username, m.Content, m.Reference(), &b.messagesCache)
 	}
 }
 

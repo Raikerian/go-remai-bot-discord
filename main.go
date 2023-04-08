@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"log"
+	"os"
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
@@ -26,6 +27,9 @@ var (
 )
 
 func init() {
+	log.SetOutput(os.Stdout)
+	log.SetFlags(log.Lshortfile)
+
 	var err error
 	discordSession, err = discord.New("Bot " + *BotToken)
 	if err != nil {
@@ -43,48 +47,31 @@ var (
 	dmPermission                   = false
 	defaultMemberPermissions int64 = discord.PermissionViewChannel
 
-	chatGPT3Command = &discord.ApplicationCommand{
-		Name:                     "chatgpt3",
-		Description:              "Start conversation with ChatGPT using ChatGPT-3.5 model",
+	chatGPTCommand = &discord.ApplicationCommand{
+		Name:                     "chatgpt",
+		Description:              "Start conversation with ChatGPT",
 		DefaultMemberPermissions: &defaultMemberPermissions,
 		DMPermission:             &dmPermission,
 		Options: []*discord.ApplicationCommandOption{
 			{
 				Type:        discord.ApplicationCommandOptionString,
-				Name:        "prompt",
-				Description: "ChatGPT-3.5 prompt",
+				Name:        commandhandlers.ChatGPTCommandOptionPrompt,
+				Description: "ChatGPT prompt",
 				Required:    true,
-				Options: []*discord.ApplicationCommandOption{
-
-					{
-						Type:        discord.ApplicationCommandOptionString,
-						Name:        "prompt",
-						Description: "ChatGPT-3.5 prompt",
-						Required:    true,
-					},
-				},
 			},
-		},
-	}
-
-	chatGPT4Command = &discord.ApplicationCommand{
-		Name:                     "chatgpt4",
-		Description:              "Start conversation with ChatGPT using ChatGPT-4 model",
-		DefaultMemberPermissions: &defaultMemberPermissions,
-		DMPermission:             &dmPermission,
-		Options: []*discord.ApplicationCommandOption{
 			{
 				Type:        discord.ApplicationCommandOptionString,
-				Name:        "prompt",
-				Description: "ChatGPT-4 prompt",
-				Required:    true,
-				Options: []*discord.ApplicationCommandOption{
-
+				Name:        commandhandlers.ChatGPTCommandOptionModel,
+				Description: "GPT model",
+				Required:    false,
+				Choices: []*discord.ApplicationCommandOptionChoice{
 					{
-						Type:        discord.ApplicationCommandOptionString,
-						Name:        "prompt",
-						Description: "ChatGPT-4 prompt",
-						Required:    true,
+						Name:  "GPT-3.5-Turbo (Default)",
+						Value: openai.GPT3Dot5Turbo,
+					},
+					{
+						Name:  "GPT-4",
+						Value: openai.GPT4,
 					},
 				},
 			},
@@ -92,8 +79,7 @@ var (
 	}
 
 	commands = []*discord.ApplicationCommand{
-		chatGPT3Command,
-		chatGPT4Command,
+		chatGPTCommand,
 	}
 )
 
@@ -102,8 +88,7 @@ func main() {
 
 	// Register command handlers
 	if openaiClient != nil {
-		b.RegisterCommandHandler(chatGPT3Command.Name, commandhandlers.ChatGPTCommandHandler(openaiClient, openai.GPT3Dot5Turbo, b.MessagesCache()))
-		b.RegisterCommandHandler(chatGPT4Command.Name, commandhandlers.ChatGPTCommandHandler(openaiClient, openai.GPT4, b.MessagesCache()))
+		b.RegisterCommandHandler(chatGPTCommand.Name, commandhandlers.ChatGPTCommandHandler(openaiClient, b.MessagesCache()))
 	}
 
 	// Run the bot

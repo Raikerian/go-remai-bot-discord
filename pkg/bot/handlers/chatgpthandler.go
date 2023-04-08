@@ -10,7 +10,7 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
-func ChatGPT(openaiClient *openai.Client, gptModel string, s *discord.Session, channelID string, messageID string, authorUsername string, content string, messageReference *discord.MessageReference, messagesCache *map[string][]openai.ChatCompletionMessage) {
+func HandleChatGPTRequest(openaiClient *openai.Client, gptModel string, s *discord.Session, channelID string, messageID string, authorUsername string, content string, messageReference *discord.MessageReference, messagesCache *map[string][]openai.ChatCompletionMessage) {
 	// Initialize messageCache if it's nil
 	if messagesCache == nil {
 		tempMessagesCache := make(map[string][]openai.ChatCompletionMessage)
@@ -48,6 +48,14 @@ func ChatGPT(openaiClient *openai.Client, gptModel string, s *discord.Session, c
 		}
 		messageID = channelMessage.ID
 	}
+
+	// setup system message if it's not initialized
+	// if (*messagesCache)[channelID] == nil {
+	// 	(*messagesCache)[channelID] = append((*messagesCache)[channelID], openai.ChatCompletionMessage{
+	// 		Role:    openai.ChatMessageRoleSystem,
+	// 		Content: "Your name is Rem AI",
+	// 	})
+	// }
 
 	// Lock the thread while we are generating ChatGPT answser
 	err := utils.ToggleDiscordThreadLock(s, channelID, true)
