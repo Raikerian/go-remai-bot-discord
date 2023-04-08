@@ -78,8 +78,16 @@ var (
 		},
 	}
 
+	infoCommand = &discord.ApplicationCommand{
+		Name:                     "info",
+		Description:              "Show information about current version of Rem AI",
+		DefaultMemberPermissions: &defaultMemberPermissions,
+		DMPermission:             &dmPermission,
+	}
+
 	commands = []*discord.ApplicationCommand{
 		chatGPTCommand,
+		infoCommand,
 	}
 )
 
@@ -90,6 +98,7 @@ func main() {
 	if openaiClient != nil {
 		b.RegisterCommandHandler(chatGPTCommand.Name, commandhandlers.ChatGPTCommandHandler(openaiClient, b.MessagesCache()))
 	}
+	b.RegisterCommandHandler(infoCommand.Name, commandhandlers.InfoCommandHandler())
 
 	// Run the bot
 	b.Run(commands, *GuildID, *RemoveCommands)
