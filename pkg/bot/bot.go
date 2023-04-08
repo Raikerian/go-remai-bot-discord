@@ -8,6 +8,8 @@ import (
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot/handlers"
+	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
+	"github.com/raikerian/go-remai-bot-discord/pkg/utils"
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -103,13 +105,21 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 		// ignore self messages
 		return
 	}
+
 	if m.Content == "" {
 		// TODO: handle empty content
 		log.Fatalf("Message from " + m.Author.Username + " is empty.")
 		return
 	}
-	// log.Println("Message received: " + m.Content + " from " + m.Author.Username)
+
 	if ch, err := s.State.Channel(m.ChannelID); err != nil || ch.IsThread() {
+		if err != nil {
+			// We need to be sure that it's a thread, and since we failed to fetch channel
+			// we just log the error and move on
+			log.Printf("[CHID: %s] Failed to get channel info with the error: %v", m.ChannelID, err)
+			return
+		}
+
 		log.Println("Message received: " + m.Content + " from " + m.Author.Username)
 
 		if b.messagesCache[m.ChannelID] == nil {
@@ -156,14 +166,35 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 			}
 		}
 
-		handlers.HandleChatGPTRequest(b.openaiClient, getModelFromTitle(ch.Name), s, m.ChannelID, m.ID, m.Author.Username, m.Content, m.Reference(), &b.messagesCache)
+		// Lock the thread while we are generating ChatGPT answser
+		utils.ToggleDiscordThreadLock(s, m.ChannelID, true)
+		// Unlock the thread at the end
+		defer utils.ToggleDiscordThreadLock(s, m.ChannelID, false)
+
+		channelMessage, err := s.ChannelMessageSendReply(m.ChannelID, constants.GenericPendingMessage, m.Reference())
+		if err != nil {
+			// Without reply  we cannot edit message with the response of ChatGPT
+			// Maybe in the future just try to post a new message instead, but for now just cancel
+			log.Printf("[CHID: %s] Failed to reply in the thread with the error: %v", m.ChannelID, err)
+			return
+		}
+
+		handlers.ChatGPTRequest(handlers.ChatGPTHandlerParams{
+			OpenAIClient:     b.openaiClient,
+			GPTModel:         getModelFromTitle(ch.Name),
+			GPTPrompt:        m.Content,
+			DiscordSession:   s,
+			DiscordChannelID: m.ChannelID,
+			DiscordMessageID: channelMessage.ID,
+			MessagesCache:    &b.messagesCache,
+		})
 	}
 }
 
 func getModelFromTitle(title string) string {
-	if strings.Contains(title, "ChatGPT-3.5") {
+	if strings.Contains(title, openai.GPT3Dot5Turbo) {
 		return openai.GPT3Dot5Turbo
-	} else if strings.Contains(title, "ChatGPT-4") {
+	} else if strings.Contains(title, openai.GPT4) {
 		return openai.GPT4
 	}
 	return openai.GPT3Dot5Turbo
