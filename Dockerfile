@@ -9,7 +9,7 @@ COPY . .
 
 RUN go mod download
 
-RUN go build -o /go-remai-bot-discord
+RUN CGO_ENABLED=0 GOOS=linux go build -o /go-remai-bot-discord
 
 COPY entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
