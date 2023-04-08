@@ -29,10 +29,14 @@ func init() {
 	var err error
 	discordSession, err = discord.New("Bot " + *BotToken)
 	if err != nil {
+		// Discord session is backbone of this application,
+		// if can't open the session exit immediately
 		log.Fatalf("Invalid bot parameters: %v", err)
 	}
 
-	openaiClient = openai.NewClient(*OpenAIToken)
+	if OpenAIToken != nil {
+		openaiClient = openai.NewClient(*OpenAIToken)
+	}
 }
 
 var (
@@ -97,8 +101,10 @@ func main() {
 	b := bot.NewBot(discordSession, openaiClient)
 
 	// Register command handlers
-	b.RegisterCommandHandler(chatGPT3Command.Name, commandhandlers.ChatGPTCommandHandler(openaiClient, openai.GPT3Dot5Turbo, b.MessagesCache()))
-	b.RegisterCommandHandler(chatGPT4Command.Name, commandhandlers.ChatGPTCommandHandler(openaiClient, openai.GPT4, b.MessagesCache()))
+	if openaiClient != nil {
+		b.RegisterCommandHandler(chatGPT3Command.Name, commandhandlers.ChatGPTCommandHandler(openaiClient, openai.GPT3Dot5Turbo, b.MessagesCache()))
+		b.RegisterCommandHandler(chatGPT4Command.Name, commandhandlers.ChatGPTCommandHandler(openaiClient, openai.GPT4, b.MessagesCache()))
+	}
 
 	// Run the bot
 	b.Run(commands, *GuildID, *RemoveCommands)
