@@ -197,5 +197,5 @@ func getModelFromTitle(title string) string {
 	} else if strings.Contains(title, openai.GPT4) {
 		return openai.GPT4
 	}
-	return openai.GPT3Dot5Turbo
+	return constants.DefaultGPTModel
 }

@@ -14,8 +14,6 @@ import (
 const (
 	ChatGPTCommandOptionPrompt = "prompt"
 	ChatGPTCommandOptionModel  = "model"
-
-	DefaultGPTModel = openai.GPT3Dot5Turbo
 )
 
 func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *map[string][]openai.ChatCompletionMessage) func(s *discord.Session, i *discord.InteractionCreate) {
@@ -46,7 +44,7 @@ func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *map[strin
 			return
 		}
 
-		model := DefaultGPTModel
+		model := constants.DefaultGPTModel
 		if option, ok := optionMap[ChatGPTCommandOptionModel]; ok {
 			model = option.StringValue()
 			log.Printf("[i.ID: %s] Model provided: %s\n", i.Interaction.ID, model)
