@@ -6,7 +6,9 @@ import (
 	"log"
 
 	discord "github.com/bwmarrin/discordgo"
-	openai "github.com/sashabaranov/go-openai"
+	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
+	"github.com/sashabaranov/go-openai"
 )
 
 type ChatGPTHandlerParams struct {
@@ -16,29 +18,33 @@ type ChatGPTHandlerParams struct {
 	DiscordSession   *discord.Session
 	DiscordChannelID string
 	DiscordMessageID string
-	MessagesCache    *map[string][]openai.ChatCompletionMessage
+	MessagesCache    *lru.Cache[string, *cache.ChatGPTMessagesCache]
 }
 
 func ChatGPTRequest(params ChatGPTHandlerParams) {
-	log.Printf("[CHID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", params.DiscordChannelID, params.GPTModel, len(*params.MessagesCache))
-
-	// Prepare message
-	if params.MessagesCache == nil {
-		// Initialize messageCache if it's nil
-		tempMessagesCache := make(map[string][]openai.ChatCompletionMessage)
-		params.MessagesCache = &tempMessagesCache
+	cache, ok := params.MessagesCache.Get(params.DiscordChannelID)
+	if !ok {
+		panic(fmt.Sprintf("[CHID: %s] Failed to retrieve messages cache for channel", params.DiscordChannelID))
 	}
-	(*params.MessagesCache)[params.DiscordChannelID] = append((*params.MessagesCache)[params.DiscordChannelID], openai.ChatCompletionMessage{
+
+	log.Printf("[CHID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", params.DiscordChannelID, params.GPTModel, len(cache.Messages))
+
+	cache.Messages = append(cache.Messages, openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleUser,
 		Content: params.GPTPrompt,
 	})
 
 	// Create message with ChatGPT
+	messages := cache.Messages
+	if cache.SystemMessage != nil {
+		messages = append([]openai.ChatCompletionMessage{*cache.SystemMessage}, messages...)
+	}
 	resp, err := params.OpenAIClient.CreateChatCompletion(
 		context.Background(),
 		openai.ChatCompletionRequest{
 			Model:    params.GPTModel,
-			Messages: (*params.MessagesCache)[params.DiscordChannelID],
+			Messages: messages,
+			// Temperature: 0.1,
 		},
 	)
 	if err != nil {
@@ -51,7 +57,7 @@ func ChatGPTRequest(params ChatGPTHandlerParams) {
 	// Save response to context cache
 	responseContent := resp.Choices[0].Message.Content
 	log.Printf("[CHID: %s] ChatGPT Request [Model: %s] responded with a message: %s\n", params.DiscordChannelID, params.GPTModel, responseContent)
-	(*params.MessagesCache)[params.DiscordChannelID] = append((*params.MessagesCache)[params.DiscordChannelID], openai.ChatCompletionMessage{
+	cache.Messages = append(cache.Messages, openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleAssistant,
 		Content: responseContent,
 	})

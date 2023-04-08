@@ -5,10 +5,12 @@ import (
 	"log"
 
 	discord "github.com/bwmarrin/discordgo"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot/handlers"
+	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
 	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 	"github.com/raikerian/go-remai-bot-discord/pkg/utils"
-	openai "github.com/sashabaranov/go-openai"
+	"github.com/sashabaranov/go-openai"
 )
 
 const (
@@ -17,7 +19,7 @@ const (
 	ChatGPTCommandOptionModel   = "model"
 )
 
-func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *map[string][]openai.ChatCompletionMessage) func(s *discord.Session, i *discord.InteractionCreate) {
+func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *lru.Cache[string, *cache.ChatGPTMessagesCache]) func(s *discord.Session, i *discord.InteractionCreate) {
 	return func(s *discord.Session, i *discord.InteractionCreate) {
 		log.Printf("[i.ID: %s] Interaction invoked by [UID: %s, Name: %s]\n", i.Interaction.ID, i.Member.User.ID, i.Member.User.Username)
 
@@ -78,7 +80,7 @@ func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *map[strin
 		if ch, err := s.State.Channel(m.ChannelID); err != nil || !ch.IsThread() {
 			thread, err := s.MessageThreadStartComplex(m.ChannelID, m.ID, &discord.ThreadStart{
 				Name:                model + " conversation with " + i.Interaction.Member.User.Username,
-				AutoArchiveDuration: 60,
+				AutoArchiveDuration: constants.DiscordThreadAutoArchivewDurationMinutes,
 				Invitable:           false,
 			})
 			if err != nil {
@@ -108,11 +110,13 @@ func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *map[strin
 			}
 
 			// Set context of the conversation as a system message
+			cache := &cache.ChatGPTMessagesCache{}
+			messagesCache.Add(thread.ID, cache)
 			if context != "" {
-				(*messagesCache)[thread.ID] = append((*messagesCache)[thread.ID], openai.ChatCompletionMessage{
+				cache.SystemMessage = &openai.ChatCompletionMessage{
 					Role:    openai.ChatMessageRoleSystem,
 					Content: context,
-				})
+				}
 			}
 
 			handlers.ChatGPTRequest(handlers.ChatGPTHandlerParams{
