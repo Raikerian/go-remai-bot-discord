@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 
 	discord "github.com/bwmarrin/discordgo"
 	lru "github.com/hashicorp/golang-lru/v2"
@@ -83,8 +84,8 @@ func (b *Bot) Run(commands []*discord.ApplicationCommand, guildID string, remove
 	defer b.session.Close()
 
 	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt)
-	log.Println("Press Ctrl+C to exit")
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	log.Println("Press Ctrl+C to exit manually")
 	<-stop
 
 	// Unregister commands if requested

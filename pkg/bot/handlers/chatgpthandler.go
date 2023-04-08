@@ -56,7 +56,7 @@ func ChatGPTRequest(params ChatGPTHandlerParams) {
 
 	// Save response to context cache
 	responseContent := resp.Choices[0].Message.Content
-	log.Printf("[CHID: %s] ChatGPT Request [Model: %s] responded with a message: %s\n", params.DiscordChannelID, params.GPTModel, responseContent)
+	log.Printf("[CHID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", params.DiscordChannelID, params.GPTModel, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TotalTokens)
 	cache.Messages = append(cache.Messages, openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleAssistant,
 		Content: responseContent,
