@@ -145,6 +145,7 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 			isGPTThread := true
 
 			var lastID string
+			var systemMessage *openai.ChatCompletionMessage
 			for {
 				// Get messages in batches of 100 (maximum allowed by Discord API)
 				batch, _ := s.ChannelMessages(ch.ID, 100, lastID, "", "")
@@ -177,7 +178,16 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 						}
 						role = openai.ChatMessageRoleUser
 						if value.ReferencedMessage != nil {
-							content = strings.TrimPrefix(strings.Join(strings.Split(value.ReferencedMessage.Content, "\n")[1:], "\n"), "> ")
+							// TODO: refactor
+							lines := strings.Split(value.ReferencedMessage.Content, "\n")
+							content = strings.TrimPrefix(lines[1], "> ")
+							if len(lines) > 2 {
+								context := strings.TrimPrefix(lines[3], "> ")
+								systemMessage = &openai.ChatCompletionMessage{
+									Role:    openai.ChatMessageRoleSystem,
+									Content: context,
+								}
+							}
 						}
 					}
 					transformed[len(batch)-i-1] = openai.ChatCompletionMessage{
@@ -196,6 +206,10 @@ func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) 
 
 				// Set the lastID to the last message's ID to get the next batch of messages
 				lastID = batch[len(batch)-1].ID
+			}
+
+			if systemMessage != nil {
+				b.messagesCache[m.ChannelID] = append([]openai.ChatCompletionMessage{*systemMessage}, b.messagesCache[m.ChannelID]...)
 			}
 
 			if !isGPTThread {
