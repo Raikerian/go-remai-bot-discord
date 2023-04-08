@@ -8,8 +8,8 @@
 set -e
 
 # Set up your API tokens here
-DISCORD_TOKEN="$(cat ~/Dev/discord_token)"
-OPENAI_TOKEN="$(cat ~/Dev/openai_token)"
+DISCORD_TOKEN=""
+OPENAI_TOKEN=""
 
 IMAGE_NAME="${PWD##*/}"
 
