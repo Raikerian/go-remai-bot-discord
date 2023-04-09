@@ -7,44 +7,13 @@ import (
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot/handlers"
 	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
+	"github.com/raikerian/go-remai-bot-discord/pkg/commandhandlers/commandoptions"
 	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 	"github.com/raikerian/go-remai-bot-discord/pkg/utils"
 	"github.com/sashabaranov/go-openai"
 )
 
-type ChatGPTCommandOptionType uint8
-
-const (
-	ChatGPTCommandOptionPrompt  ChatGPTCommandOptionType = 1
-	ChatGPTCommandOptionContext ChatGPTCommandOptionType = 2
-	ChatGPTCommandOptionModel   ChatGPTCommandOptionType = 3
-)
-
-func (t ChatGPTCommandOptionType) String() string {
-	switch t {
-	case ChatGPTCommandOptionPrompt:
-		return "prompt"
-	case ChatGPTCommandOptionContext:
-		return "context"
-	case ChatGPTCommandOptionModel:
-		return "model"
-	}
-	return fmt.Sprintf("ApplicationCommandOptionType(%d)", t)
-}
-
-func (t ChatGPTCommandOptionType) HumanReadableString() string {
-	switch t {
-	case ChatGPTCommandOptionPrompt:
-		return "Prompt"
-	case ChatGPTCommandOptionContext:
-		return "Context"
-	case ChatGPTCommandOptionModel:
-		return "Model"
-	}
-	return fmt.Sprintf("ApplicationCommandOptionType(%d)", t)
-}
-
-func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *cache.MessagesCache) func(s *discord.Session, i *discord.InteractionCreate) {
+func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *cache.GPTMessagesCache) func(s *discord.Session, i *discord.InteractionCreate) {
 	return func(s *discord.Session, i *discord.InteractionCreate) {
 		log.Printf("[GID: %s, i.ID: %s] Interaction invoked by [UID: %s, Name: %s]\n", i.GuildID, i.ID, i.Member.User.ID, i.Member.User.Username)
 
@@ -59,7 +28,7 @@ func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *cache.Mes
 		// Get the value from the option map.
 		// When the option exists, ok = true
 		var prompt string
-		if option, ok := optionMap[ChatGPTCommandOptionPrompt.String()]; ok {
+		if option, ok := optionMap[commandoptions.ChatGPTCommandOptionPrompt.String()]; ok {
 			// Option values must be type asserted from interface{}.
 			// Discordgo provides utility functions to make this simple.
 			prompt = option.StringValue()
@@ -74,29 +43,29 @@ func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *cache.Mes
 		// response := fmt.Sprintf("<@%s> asked:\n> %s", i.Member.User.ID, prompt)
 		fields := make([]*discord.MessageEmbedField, 0, 3)
 		fields = append(fields, &discord.MessageEmbedField{
-			Name:  ChatGPTCommandOptionPrompt.HumanReadableString(),
+			Name:  commandoptions.ChatGPTCommandOptionPrompt.HumanReadableString(),
 			Value: prompt,
 		})
 
 		// Set context of the conversation as a system message
 		var context string
-		if option, ok := optionMap[ChatGPTCommandOptionContext.String()]; ok {
+		if option, ok := optionMap[commandoptions.ChatGPTCommandOptionContext.String()]; ok {
 			context = option.StringValue()
 			// response += fmt.Sprintf("\nand provided the following context:\n> %s", context)
 			fields = append(fields, &discord.MessageEmbedField{
-				Name:  ChatGPTCommandOptionContext.HumanReadableString(),
+				Name:  commandoptions.ChatGPTCommandOptionContext.HumanReadableString(),
 				Value: context,
 			})
 			log.Printf("[GID: %s, i.ID: %s] Context provided: %s\n", i.GuildID, i.ID, context)
 		}
 
 		model := constants.DefaultGPTModel
-		if option, ok := optionMap[ChatGPTCommandOptionModel.String()]; ok {
+		if option, ok := optionMap[commandoptions.ChatGPTCommandOptionModel.String()]; ok {
 			model = option.StringValue()
 			log.Printf("[GID: %s, i.ID: %s] Model provided: %s\n", i.GuildID, i.ID, model)
 		}
 		fields = append(fields, &discord.MessageEmbedField{
-			Name:  ChatGPTCommandOptionModel.HumanReadableString(),
+			Name:  commandoptions.ChatGPTCommandOptionModel.HumanReadableString(),
 			Value: model,
 		})
 
@@ -152,8 +121,8 @@ func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *cache.Mes
 			}
 
 			// Set context of the conversation as a system message
-			cache := &cache.MessagesCacheData{
-				InteractionType: cache.MessagesCacheInteractionChatGPT,
+			cache := &cache.GPTMessagesCacheData{
+				GPTModel: model,
 			}
 			messagesCache.Add(thread.ID, cache)
 			if context != "" {
@@ -165,13 +134,12 @@ func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *cache.Mes
 
 			handlers.OnChatGPTRequest(handlers.ChatGPTRequestParams{
 				OpenAIClient:     openaiClient,
-				GPTModel:         model,
 				GPTPrompt:        prompt,
 				DiscordSession:   s,
 				DiscordGuildID:   i.GuildID,
 				DiscordChannelID: thread.ID,
 				DiscordMessageID: channelMessage.ID,
-				MessagesCache:    messagesCache,
+				GPTMessagesCache: messagesCache,
 			})
 		}
 	}

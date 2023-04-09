@@ -14,24 +14,24 @@ import (
 )
 
 type Bot struct {
-	session         *discord.Session
-	openaiClient    *openai.Client
-	commandHandlers map[string]func(s *discord.Session, i *discord.InteractionCreate)
-	messagesCache   *cache.MessagesCache
+	session          *discord.Session
+	openaiClient     *openai.Client
+	commandHandlers  map[string]func(s *discord.Session, i *discord.InteractionCreate)
+	gptMessagesCache *cache.GPTMessagesCache
 }
 
 var ignoredChannelsCache = make(map[string]struct{})
 
 func NewBot(session *discord.Session, openaiClient *openai.Client) *Bot {
-	cache, err := cache.NewMessagesCache(constants.DiscordThreadsCacheSize)
+	cache, err := cache.NewGPTMessagesCache(constants.DiscordThreadsCacheSize)
 	if err != nil {
 		panic(err)
 	}
 	return &Bot{
-		session:         session,
-		openaiClient:    openaiClient,
-		commandHandlers: make(map[string]func(s *discord.Session, i *discord.InteractionCreate)),
-		messagesCache:   cache,
+		session:          session,
+		openaiClient:     openaiClient,
+		commandHandlers:  make(map[string]func(s *discord.Session, i *discord.InteractionCreate)),
+		gptMessagesCache: cache,
 	}
 }
 
@@ -39,8 +39,8 @@ func (b *Bot) RegisterCommandHandler(name string, handler func(s *discord.Sessio
 	b.commandHandlers[name] = handler
 }
 
-func (b *Bot) MessagesCache() *cache.MessagesCache {
-	return b.messagesCache
+func (b *Bot) GPTMessagesCache() *cache.GPTMessagesCache {
+	return b.gptMessagesCache
 }
 
 func (b *Bot) Run(commands []*discord.ApplicationCommand, guildID string, removeCommands bool) {
@@ -61,7 +61,7 @@ func (b *Bot) Run(commands []*discord.ApplicationCommand, guildID string, remove
 			DiscordSession:       s,
 			DiscordMessage:       m,
 			OpenAIClient:         b.openaiClient,
-			MessagesCache:        b.messagesCache,
+			GPTMessagesCache:     b.gptMessagesCache,
 			IgnoredChannelsCache: &ignoredChannelsCache,
 		})
 	})

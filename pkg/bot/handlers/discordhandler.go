@@ -6,6 +6,7 @@ import (
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
+	"github.com/raikerian/go-remai-bot-discord/pkg/commandhandlers/commandoptions"
 	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 	"github.com/raikerian/go-remai-bot-discord/pkg/utils"
 	"github.com/sashabaranov/go-openai"
@@ -15,10 +16,11 @@ type DiscordMessageCreateParams struct {
 	DiscordSession       *discord.Session
 	DiscordMessage       *discord.MessageCreate
 	OpenAIClient         *openai.Client
-	MessagesCache        *cache.MessagesCache
+	GPTMessagesCache     *cache.GPTMessagesCache
 	IgnoredChannelsCache *map[string]struct{}
 }
 
+// TODO: refactor this, otherwise its going to be hard to handle different commands
 func OnDiscordMessageCreate(params DiscordMessageCreateParams) {
 	if params.DiscordSession.State.User.ID == params.DiscordMessage.Author.ID {
 		// ignore self messages
@@ -51,7 +53,7 @@ func OnDiscordMessageCreate(params DiscordMessageCreateParams) {
 
 		log.Printf("[GID: %s, CHID: %s, MID: %s] Handling new message in a thread\n", params.DiscordMessage.GuildID, params.DiscordMessage.ChannelID, params.DiscordMessage.ID)
 
-		if !params.MessagesCache.Contains(params.DiscordMessage.ChannelID) {
+		if !params.GPTMessagesCache.Contains(params.DiscordMessage.ChannelID) {
 			isGPTThread := true
 
 			var lastID string
@@ -82,7 +84,7 @@ func OnDiscordMessageCreate(params DiscordMessageCreateParams) {
 					// First message is always a referenced message
 					// Check if it is, and then modify to get the original prompt
 					if value.Type == discord.MessageTypeThreadStarterMessage {
-						if value.Author.ID != params.DiscordSession.State.User.ID {
+						if value.Author.ID != params.DiscordSession.State.User.ID || value.ReferencedMessage == nil {
 							// this is not gpt thread, ignore
 							// since we are wasting here a total request to discord API, need to refactor so we always fetch messages from the oldest first
 							// TODO: fetch oldest first from discord api
@@ -90,25 +92,32 @@ func OnDiscordMessageCreate(params DiscordMessageCreateParams) {
 							break
 						}
 						role = openai.ChatMessageRoleUser
-						if value.ReferencedMessage != nil {
-							// TODO: refactor
-							lines := strings.Split(value.ReferencedMessage.Content, "\n")
-							content = strings.TrimPrefix(lines[1], "> ")
-							if len(lines) > 2 {
-								context := strings.TrimPrefix(lines[3], "> ")
-								systemMessage := &openai.ChatCompletionMessage{
-									Role:    openai.ChatMessageRoleSystem,
-									Content: context,
-								}
-								if item, ok := params.MessagesCache.Get(params.DiscordMessage.ChannelID); ok {
-									item.SystemMessage = systemMessage
-								} else {
-									params.MessagesCache.Add(params.DiscordMessage.ChannelID, &cache.MessagesCacheData{
-										SystemMessage:   systemMessage,
-										InteractionType: cache.MessagesCacheInteractionChatGPT,
-									})
-								}
+
+						prompt, context, model := parseInteractionReply(value.ReferencedMessage)
+						if prompt == "" {
+							isGPTThread = false
+							break
+						}
+						content = prompt
+						var systemMessage *openai.ChatCompletionMessage
+						if context != "" {
+							systemMessage = &openai.ChatCompletionMessage{
+								Role:    openai.ChatMessageRoleSystem,
+								Content: context,
 							}
+						}
+						if model == "" {
+							model = constants.DefaultGPTModel
+						}
+
+						if item, ok := params.GPTMessagesCache.Get(params.DiscordMessage.ChannelID); ok {
+							item.SystemMessage = systemMessage
+							item.GPTModel = model
+						} else {
+							params.GPTMessagesCache.Add(params.DiscordMessage.ChannelID, &cache.GPTMessagesCacheData{
+								SystemMessage: systemMessage,
+								GPTModel:      model,
+							})
 						}
 					}
 					transformed = append(transformed, openai.ChatCompletionMessage{
@@ -120,12 +129,11 @@ func OnDiscordMessageCreate(params DiscordMessageCreateParams) {
 				reverseMessages(&transformed)
 
 				// Add the messages to the beginning of the main list
-				if item, ok := params.MessagesCache.Get(params.DiscordMessage.ChannelID); ok {
+				if item, ok := params.GPTMessagesCache.Get(params.DiscordMessage.ChannelID); ok {
 					item.Messages = append(transformed, item.Messages...)
 				} else {
-					params.MessagesCache.Add(params.DiscordMessage.ChannelID, &cache.MessagesCacheData{
-						Messages:        transformed,
-						InteractionType: cache.MessagesCacheInteractionChatGPT,
+					params.GPTMessagesCache.Add(params.DiscordMessage.ChannelID, &cache.GPTMessagesCacheData{
+						Messages: transformed,
 					})
 				}
 
@@ -141,7 +149,7 @@ func OnDiscordMessageCreate(params DiscordMessageCreateParams) {
 			if !isGPTThread {
 				// this was not a GPT thread, clear cache in case and move on
 				// TODO: remove cache clear when above request is fixed to have oldest first, as we wont have any cache that way
-				params.MessagesCache.Remove(params.DiscordMessage.ChannelID)
+				params.GPTMessagesCache.Remove(params.DiscordMessage.ChannelID)
 				log.Printf("[GID: %s, CHID: %s] Not a GPT thread, saving to ignored cache to skip over it later", params.DiscordMessage.GuildID, params.DiscordMessage.ChannelID)
 				// save threadID to cache, so we can always ignore it later
 				(*params.IgnoredChannelsCache)[params.DiscordMessage.ChannelID] = struct{}{}
@@ -164,13 +172,12 @@ func OnDiscordMessageCreate(params DiscordMessageCreateParams) {
 
 		OnChatGPTRequest(ChatGPTRequestParams{
 			OpenAIClient:     params.OpenAIClient,
-			GPTModel:         getModelFromTitle(ch.Name),
 			GPTPrompt:        params.DiscordMessage.Content,
 			DiscordSession:   params.DiscordSession,
 			DiscordGuildID:   params.DiscordMessage.GuildID,
 			DiscordChannelID: params.DiscordMessage.ChannelID,
 			DiscordMessageID: channelMessage.ID,
-			MessagesCache:    params.MessagesCache,
+			GPTMessagesCache: params.GPTMessagesCache,
 		})
 	}
 }
@@ -182,15 +189,30 @@ func reverseMessages(messages *[]openai.ChatCompletionMessage) {
 	}
 }
 
-func getModelFromTitle(title string) string {
-	if strings.Contains(title, openai.GPT3Dot5Turbo) {
-		return openai.GPT3Dot5Turbo
-	} else if strings.Contains(title, openai.GPT4) {
-		return openai.GPT4
+func parseInteractionReply(discordMessage *discord.Message) (prompt string, context string, model string) {
+	if discordMessage.Embeds != nil && len(discordMessage.Embeds) > 0 {
+		for _, value := range discordMessage.Embeds[0].Fields {
+			switch value.Name {
+			case commandoptions.ChatGPTCommandOptionPrompt.HumanReadableString():
+				prompt = value.Value
+			case commandoptions.ChatGPTCommandOptionContext.HumanReadableString():
+				context = value.Value
+			case commandoptions.ChatGPTCommandOptionModel.HumanReadableString():
+				model = value.Value
+			}
+		}
+
+		return
 	}
-	return constants.DefaultGPTModel
-}
 
-func systemMessageFromInteractionReply() {
-
+	// old format for backwards compatibility with threads from v0.0.x
+	// remove at some point later
+	if strings.Contains(discordMessage.Content, "\n") {
+		lines := strings.Split(discordMessage.Content, "\n")
+		prompt = strings.TrimPrefix(lines[1], "> ")
+		if len(lines) > 2 {
+			context = strings.TrimPrefix(lines[3], "> ")
+		}
+	}
+	return
 }

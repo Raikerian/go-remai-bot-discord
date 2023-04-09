@@ -7,6 +7,8 @@ import (
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
 	"github.com/raikerian/go-remai-bot-discord/pkg/commandhandlers"
+	"github.com/raikerian/go-remai-bot-discord/pkg/commandhandlers/commandoptions"
+	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 	"github.com/sashabaranov/go-openai"
 	"gopkg.in/yaml.v2"
 )
@@ -47,19 +49,19 @@ var (
 		Options: []*discord.ApplicationCommandOption{
 			{
 				Type:        discord.ApplicationCommandOptionString,
-				Name:        commandhandlers.ChatGPTCommandOptionPrompt.String(),
+				Name:        commandoptions.ChatGPTCommandOptionPrompt.String(),
 				Description: "ChatGPT prompt",
 				Required:    true,
 			},
 			{
 				Type:        discord.ApplicationCommandOptionString,
-				Name:        commandhandlers.ChatGPTCommandOptionContext.String(),
+				Name:        commandoptions.ChatGPTCommandOptionContext.String(),
 				Description: "Sets context that guides the AI assistant's behavior during the conversation",
 				Required:    false,
 			},
 			{
 				Type:        discord.ApplicationCommandOptionString,
-				Name:        commandhandlers.ChatGPTCommandOptionModel.String(),
+				Name:        commandoptions.ChatGPTCommandOptionModel.String(),
 				Description: "GPT model",
 				Required:    false,
 				Choices: []*discord.ApplicationCommandOptionChoice{
@@ -117,7 +119,7 @@ func main() {
 
 	// Register command handlers
 	if openaiClient != nil {
-		b.RegisterCommandHandler(chatGPTCommand.Name, commandhandlers.ChatGPTCommandHandler(openaiClient, b.MessagesCache()))
+		b.RegisterCommandHandler(chatGPTCommand.Name, commandhandlers.ChatGPTCommandHandler(openaiClient, b.GPTMessagesCache()))
 	}
 	b.RegisterCommandHandler(infoCommand.Name, commandhandlers.InfoCommandHandler())
 
