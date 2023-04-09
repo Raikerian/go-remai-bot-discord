@@ -162,7 +162,7 @@ func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *lru.Cache
 				}
 			}
 
-			handlers.ChatGPTRequest(handlers.ChatGPTHandlerParams{
+			handlers.OnChatGPTRequest(handlers.ChatGPTRequestParams{
 				OpenAIClient:     openaiClient,
 				GPTModel:         model,
 				GPTPrompt:        prompt,

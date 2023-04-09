@@ -11,7 +11,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-type ChatGPTHandlerParams struct {
+type ChatGPTRequestParams struct {
 	OpenAIClient     *openai.Client
 	GPTModel         string
 	GPTPrompt        string
@@ -21,7 +21,7 @@ type ChatGPTHandlerParams struct {
 	MessagesCache    *lru.Cache[string, *cache.ChatGPTMessagesCache]
 }
 
-func ChatGPTRequest(params ChatGPTHandlerParams) {
+func OnChatGPTRequest(params ChatGPTRequestParams) {
 	cache, ok := params.MessagesCache.Get(params.DiscordChannelID)
 	if !ok {
 		panic(fmt.Sprintf("[CHID: %s] Failed to retrieve messages cache for channel", params.DiscordChannelID))
