@@ -114,6 +114,7 @@ func (b *Bot) removeCommands(registeredCommands []*discord.ApplicationCommand, g
 	}
 }
 
+// TODO: refactor this out of this file
 func (b *Bot) handleMessageCreate(s *discord.Session, m *discord.MessageCreate) {
 	if s.State.User.ID == m.Author.ID {
 		// ignore self messages

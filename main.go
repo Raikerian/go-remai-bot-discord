@@ -47,19 +47,19 @@ var (
 		Options: []*discord.ApplicationCommandOption{
 			{
 				Type:        discord.ApplicationCommandOptionString,
-				Name:        commandhandlers.ChatGPTCommandOptionPrompt,
+				Name:        commandhandlers.ChatGPTCommandOptionPrompt.String(),
 				Description: "ChatGPT prompt",
 				Required:    true,
 			},
 			{
 				Type:        discord.ApplicationCommandOptionString,
-				Name:        commandhandlers.ChatGPTCommandOptionContext,
+				Name:        commandhandlers.ChatGPTCommandOptionContext.String(),
 				Description: "Sets context that guides the AI assistant's behavior during the conversation",
 				Required:    false,
 			},
 			{
 				Type:        discord.ApplicationCommandOptionString,
-				Name:        commandhandlers.ChatGPTCommandOptionModel,
+				Name:        commandhandlers.ChatGPTCommandOptionModel.String(),
 				Description: "GPT model",
 				Required:    false,
 				Choices: []*discord.ApplicationCommandOptionChoice{
