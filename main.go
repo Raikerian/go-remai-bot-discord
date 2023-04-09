@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"log"
 	"os"
 
@@ -9,38 +8,31 @@ import (
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
 	"github.com/raikerian/go-remai-bot-discord/pkg/commandhandlers"
 	"github.com/sashabaranov/go-openai"
+	"gopkg.in/yaml.v2"
 )
 
-// Bot parameters
-var (
-	GuildID        = flag.String("guild", "", "Test guild ID. If not passed - bot registers commands globally")
-	BotToken       = flag.String("discord-token", "", "Bot access token")
-	OpenAIToken    = flag.String("openai-token", "", "OpenAI access token")
-	RemoveCommands = flag.Bool("rmcmd", true, "Remove all commands after shutdowning or not")
-)
+type Config struct {
+	GuildID        string `yaml:"guild"`
+	BotToken       string `yaml:"discordToken"`
+	OpenAIToken    string `yaml:"openAIToken"`
+	RemoveCommands bool   `yaml:"removeCommands"`
+}
 
-func init() { flag.Parse() }
-
-var (
-	discordSession *discord.Session
-	openaiClient   *openai.Client
-)
+func (c *Config) ReadFromFile(file string) error {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+	err = yaml.Unmarshal(data, c)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
 func init() {
 	log.SetOutput(os.Stdout)
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-
-	var err error
-	discordSession, err = discord.New("Bot " + *BotToken)
-	if err != nil {
-		// Discord session is backbone of this application,
-		// if can't open the session exit immediately
-		log.Fatalf("Invalid bot parameters: %v", err)
-	}
-
-	if OpenAIToken != nil {
-		openaiClient = openai.NewClient(*OpenAIToken)
-	}
 }
 
 var (
@@ -98,6 +90,29 @@ var (
 )
 
 func main() {
+	// Read config from file
+	config := &Config{}
+	err := config.ReadFromFile("credentials.yaml")
+	if err != nil {
+		log.Fatalf("Error reading credentials.yaml: %v", err)
+	}
+
+	var (
+		discordSession *discord.Session
+		openaiClient   *openai.Client
+	)
+
+	discordSession, err = discord.New("Bot " + config.BotToken)
+	if err != nil {
+		// Discord session is backbone of this application,
+		// if can't open the session exit immediately
+		log.Fatalf("Invalid bot parameters: %v", err)
+	}
+
+	if config.OpenAIToken != "" {
+		openaiClient = openai.NewClient(config.OpenAIToken)
+	}
+
 	b := bot.NewBot(discordSession, openaiClient)
 
 	// Register command handlers
@@ -107,5 +122,5 @@ func main() {
 	b.RegisterCommandHandler(infoCommand.Name, commandhandlers.InfoCommandHandler())
 
 	// Run the bot
-	b.Run(commands, *GuildID, *RemoveCommands)
+	b.Run(commands, config.GuildID, config.RemoveCommands)
 }

@@ -85,7 +85,6 @@ func (b *Bot) Run(commands []*discord.ApplicationCommand, guildID string, remove
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	log.Println("Press Ctrl+C to exit manually")
 	<-stop
 
 	// Unregister commands if requested
