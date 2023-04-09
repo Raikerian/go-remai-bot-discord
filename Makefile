@@ -24,7 +24,7 @@ logs:
 	@echo "Fetching Docker logs..."
 	docker logs -f $(CONTAINER_NAME)
 
-execute: clean_container build run logs
+execute: build clean_container run logs
 
 clean_container: stop
 	@echo "Cleaning up Docker container..."
