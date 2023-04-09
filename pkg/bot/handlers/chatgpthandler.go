@@ -38,7 +38,7 @@ func OnChatGPTRequest(params ChatGPTRequestParams) {
 	if cache.SystemMessage != nil {
 		messages = append([]openai.ChatCompletionMessage{*cache.SystemMessage}, messages...)
 	}
-	log.Println(messages)
+
 	resp, err := params.OpenAIClient.CreateChatCompletion(
 		context.Background(),
 		openai.ChatCompletionRequest{
