@@ -167,6 +167,7 @@ func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *lru.Cache
 				GPTModel:         model,
 				GPTPrompt:        prompt,
 				DiscordSession:   s,
+				DiscordGuildID:   i.GuildID,
 				DiscordChannelID: thread.ID,
 				DiscordMessageID: channelMessage.ID,
 				MessagesCache:    messagesCache,

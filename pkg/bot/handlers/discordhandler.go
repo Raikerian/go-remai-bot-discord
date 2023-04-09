@@ -40,17 +40,17 @@ func OnDiscordMessageCreate(params DiscordMessageCreateParams) {
 		if err != nil {
 			// We need to be sure that it's a thread, and since we failed to fetch channel
 			// we just log the error and move on
-			log.Printf("[CHID: %s, MID: %s] Failed to get channel info with the error: %v\n", params.DiscordMessage.ChannelID, params.DiscordMessage.ID, err)
+			log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to get channel info with the error: %v\n", params.DiscordMessage.GuildID, params.DiscordMessage.ChannelID, params.DiscordMessage.ID, err)
 			return
 		}
 
 		if ch.ThreadMetadata.Locked || ch.ThreadMetadata.Archived {
 			// We don't want to handle messages in locked or archived threads
-			log.Printf("[CHID: %s] Ignoring new message [MID: %s] in a potential thread as it is locked or/and archived\n", params.DiscordMessage.ChannelID, params.DiscordMessage.ID)
+			log.Printf("[GID: %s, CHID: %s, MID: %s] Ignoring new message in a potential thread as it is locked or/and archived\n", params.DiscordMessage.GuildID, params.DiscordMessage.ChannelID, params.DiscordMessage.ID)
 			return
 		}
 
-		log.Printf("[CHID: %s] Handling new message [MID: %s] in a thread\n", params.DiscordMessage.ChannelID, params.DiscordMessage.ID)
+		log.Printf("[GID: %s, CHID: %s, MID: %s] Handling new message in a thread\n", params.DiscordMessage.GuildID, params.DiscordMessage.ChannelID, params.DiscordMessage.ID)
 
 		if !params.MessagesCache.Contains(params.DiscordMessage.ChannelID) {
 			isGPTThread := true
@@ -141,7 +141,7 @@ func OnDiscordMessageCreate(params DiscordMessageCreateParams) {
 				// this was not a GPT thread, clear cache in case and move on
 				// TODO: remove cache clear when above request is fixed to have oldest first, as we wont have any cache that way
 				params.MessagesCache.Remove(params.DiscordMessage.ChannelID)
-				log.Printf("[CHID: %s] Not a GPT thread, saving to ignored cache to skip over it later", params.DiscordMessage.ChannelID)
+				log.Printf("[GID: %s, CHID: %s] Not a GPT thread, saving to ignored cache to skip over it later", params.DiscordMessage.GuildID, params.DiscordMessage.ChannelID)
 				// save threadID to cache, so we can always ignore it later
 				(*params.IgnoredChannelsCache)[params.DiscordMessage.ChannelID] = struct{}{}
 				return
@@ -157,7 +157,7 @@ func OnDiscordMessageCreate(params DiscordMessageCreateParams) {
 		if err != nil {
 			// Without reply  we cannot edit message with the response of ChatGPT
 			// Maybe in the future just try to post a new message instead, but for now just cancel
-			log.Printf("[CHID: %s] Failed to reply in the thread with the error: %v", params.DiscordMessage.ChannelID, err)
+			log.Printf("GID: %s, [CHID: %s] Failed to reply in the thread with the error: %v", params.DiscordMessage.GuildID, params.DiscordMessage.ChannelID, err)
 			return
 		}
 
@@ -166,6 +166,7 @@ func OnDiscordMessageCreate(params DiscordMessageCreateParams) {
 			GPTModel:         getModelFromTitle(ch.Name),
 			GPTPrompt:        params.DiscordMessage.Content,
 			DiscordSession:   params.DiscordSession,
+			DiscordGuildID:   params.DiscordMessage.GuildID,
 			DiscordChannelID: params.DiscordMessage.ChannelID,
 			DiscordMessageID: channelMessage.ID,
 			MessagesCache:    params.MessagesCache,
