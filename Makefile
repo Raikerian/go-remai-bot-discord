@@ -16,13 +16,20 @@ run:
 	@echo "Running Docker container..."
 	docker run --name $(CONTAINER_NAME) -d $(IMAGE_NAME):$(VERSION)
 
+stop:
+	@echo "Stopping Docker container..."
+	docker stop $(CONTAINER_NAME) || true
+
 logs:
 	@echo "Fetching Docker logs..."
 	docker logs -f $(CONTAINER_NAME)
 
-execute: build run logs
+execute: clean_container build run logs
 
-clean:
-	@echo "Cleaning up Docker resources..."
-	docker stop $(CONTAINER_NAME) || true
+clean_container: stop
+	@echo "Cleaning up Docker container..."
 	docker rm $(CONTAINER_NAME) || true
+
+clean: clean_container
+	@echo "Cleaning up Docker resources..."
+	docker rmi $(IMAGE_NAME):$(VERSION) || true
