@@ -7,7 +7,6 @@ import (
 	"syscall"
 
 	discord "github.com/bwmarrin/discordgo"
-	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot/handlers"
 	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
 	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
@@ -18,13 +17,13 @@ type Bot struct {
 	session         *discord.Session
 	openaiClient    *openai.Client
 	commandHandlers map[string]func(s *discord.Session, i *discord.InteractionCreate)
-	messagesCache   *lru.Cache[string, *cache.ChatGPTMessagesCache]
+	messagesCache   *cache.MessagesCache
 }
 
 var ignoredChannelsCache = make(map[string]struct{})
 
 func NewBot(session *discord.Session, openaiClient *openai.Client) *Bot {
-	cache, err := lru.New[string, *cache.ChatGPTMessagesCache](constants.DiscordThreadsCacheSize)
+	cache, err := cache.NewMessagesCache(constants.DiscordThreadsCacheSize)
 	if err != nil {
 		panic(err)
 	}
@@ -40,7 +39,7 @@ func (b *Bot) RegisterCommandHandler(name string, handler func(s *discord.Sessio
 	b.commandHandlers[name] = handler
 }
 
-func (b *Bot) MessagesCache() *lru.Cache[string, *cache.ChatGPTMessagesCache] {
+func (b *Bot) MessagesCache() *cache.MessagesCache {
 	return b.messagesCache
 }
 

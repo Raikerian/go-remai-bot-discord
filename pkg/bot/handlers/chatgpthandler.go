@@ -6,7 +6,6 @@ import (
 	"log"
 
 	discord "github.com/bwmarrin/discordgo"
-	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
 	"github.com/sashabaranov/go-openai"
 )
@@ -19,7 +18,7 @@ type ChatGPTRequestParams struct {
 	DiscordGuildID   string
 	DiscordChannelID string
 	DiscordMessageID string
-	MessagesCache    *lru.Cache[string, *cache.ChatGPTMessagesCache]
+	MessagesCache    *cache.MessagesCache
 }
 
 func OnChatGPTRequest(params ChatGPTRequestParams) {

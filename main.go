@@ -40,7 +40,7 @@ var (
 	defaultMemberPermissions int64 = discord.PermissionViewChannel
 
 	chatGPTCommand = &discord.ApplicationCommand{
-		Name:                     "chatgpt",
+		Name:                     constants.CommandTypeChatGPT,
 		Description:              "Start conversation with ChatGPT",
 		DefaultMemberPermissions: &defaultMemberPermissions,
 		DMPermission:             &dmPermission,

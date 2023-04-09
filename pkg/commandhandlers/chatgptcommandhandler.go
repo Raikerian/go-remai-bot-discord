@@ -5,7 +5,6 @@ import (
 	"log"
 
 	discord "github.com/bwmarrin/discordgo"
-	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot/handlers"
 	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
 	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
@@ -45,7 +44,7 @@ func (t ChatGPTCommandOptionType) HumanReadableString() string {
 	return fmt.Sprintf("ApplicationCommandOptionType(%d)", t)
 }
 
-func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *lru.Cache[string, *cache.ChatGPTMessagesCache]) func(s *discord.Session, i *discord.InteractionCreate) {
+func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *cache.MessagesCache) func(s *discord.Session, i *discord.InteractionCreate) {
 	return func(s *discord.Session, i *discord.InteractionCreate) {
 		log.Printf("[GID: %s, i.ID: %s] Interaction invoked by [UID: %s, Name: %s]\n", i.GuildID, i.ID, i.Member.User.ID, i.Member.User.Username)
 
@@ -153,7 +152,9 @@ func ChatGPTCommandHandler(openaiClient *openai.Client, messagesCache *lru.Cache
 			}
 
 			// Set context of the conversation as a system message
-			cache := &cache.ChatGPTMessagesCache{}
+			cache := &cache.MessagesCacheData{
+				InteractionType: cache.MessagesCacheInteractionChatGPT,
+			}
 			messagesCache.Add(thread.ID, cache)
 			if context != "" {
 				cache.SystemMessage = &openai.ChatCompletionMessage{

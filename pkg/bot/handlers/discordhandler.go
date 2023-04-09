@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	discord "github.com/bwmarrin/discordgo"
-	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
 	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 	"github.com/raikerian/go-remai-bot-discord/pkg/utils"
@@ -16,7 +15,7 @@ type DiscordMessageCreateParams struct {
 	DiscordSession       *discord.Session
 	DiscordMessage       *discord.MessageCreate
 	OpenAIClient         *openai.Client
-	MessagesCache        *lru.Cache[string, *cache.ChatGPTMessagesCache]
+	MessagesCache        *cache.MessagesCache
 	IgnoredChannelsCache *map[string]struct{}
 }
 
@@ -104,8 +103,9 @@ func OnDiscordMessageCreate(params DiscordMessageCreateParams) {
 								if item, ok := params.MessagesCache.Get(params.DiscordMessage.ChannelID); ok {
 									item.SystemMessage = systemMessage
 								} else {
-									params.MessagesCache.Add(params.DiscordMessage.ChannelID, &cache.ChatGPTMessagesCache{
-										SystemMessage: systemMessage,
+									params.MessagesCache.Add(params.DiscordMessage.ChannelID, &cache.MessagesCacheData{
+										SystemMessage:   systemMessage,
+										InteractionType: cache.MessagesCacheInteractionChatGPT,
 									})
 								}
 							}
@@ -123,8 +123,9 @@ func OnDiscordMessageCreate(params DiscordMessageCreateParams) {
 				if item, ok := params.MessagesCache.Get(params.DiscordMessage.ChannelID); ok {
 					item.Messages = append(transformed, item.Messages...)
 				} else {
-					params.MessagesCache.Add(params.DiscordMessage.ChannelID, &cache.ChatGPTMessagesCache{
-						Messages: transformed,
+					params.MessagesCache.Add(params.DiscordMessage.ChannelID, &cache.MessagesCacheData{
+						Messages:        transformed,
+						InteractionType: cache.MessagesCacheInteractionChatGPT,
 					})
 				}
 
@@ -188,4 +189,8 @@ func getModelFromTitle(title string) string {
 		return openai.GPT4
 	}
 	return constants.DefaultGPTModel
+}
+
+func systemMessageFromInteractionReply() {
+
 }
