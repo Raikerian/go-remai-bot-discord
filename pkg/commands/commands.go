@@ -29,3 +29,14 @@ type Command struct {
 	Handler                  Handler
 	MessageHandler           MessageHandler
 }
+
+func (cmd Command) ApplicationCommand() *discord.ApplicationCommand {
+	applicationCommand := &discord.ApplicationCommand{
+		Name:                     cmd.Name,
+		Description:              cmd.Description,
+		DMPermission:             &cmd.DMPermission,
+		DefaultMemberPermissions: &cmd.DefaultMemberPermissions,
+		Options:                  cmd.Options,
+	}
+	return applicationCommand
+}
