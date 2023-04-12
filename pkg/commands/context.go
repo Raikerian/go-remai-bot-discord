@@ -33,3 +33,38 @@ func (ctx *Context) Edit(content string) error {
 	})
 	return err
 }
+
+func (ctx *Context) Response() (*discord.Message, error) {
+	return ctx.Session.InteractionResponse(ctx.Interaction)
+}
+
+func (ctx *Context) EditMessage(messageID string, channelID string, content string) error {
+	_, err := ctx.Session.ChannelMessageEditComplex(
+		&discord.MessageEdit{
+			Content: &content,
+			ID:      messageID,
+			Channel: channelID,
+		},
+	)
+	return err
+}
+
+func (ctx *MessageContext) Reply(content string) (m *discord.Message, err error) {
+	m, err = ctx.Session.ChannelMessageSendReply(
+		ctx.Message.ChannelID,
+		content,
+		ctx.Message.Reference(),
+	)
+	return
+}
+
+func (ctx *MessageContext) Edit(messageID string, channelID string, content string) error {
+	_, err := ctx.Session.ChannelMessageEditComplex(
+		&discord.MessageEdit{
+			Content: &content,
+			ID:      messageID,
+			Channel: channelID,
+		},
+	)
+	return err
+}

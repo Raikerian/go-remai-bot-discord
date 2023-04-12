@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -12,6 +13,12 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
+const (
+	chatGPTCommandName = "chatgpt"
+
+	discordChannelMessagesRequestMaxRetries = 4
+)
+
 type IgnoredChannelsCache map[string]struct{}
 
 type ChatGPTCommandParams struct {
@@ -19,8 +26,6 @@ type ChatGPTCommandParams struct {
 	MessagesCache        *cache.GPTMessagesCache
 	IgnoredChannelsCache *IgnoredChannelsCache
 }
-
-const DiscordChannelMessagesRequestMaxRetries = 4
 
 type ChatGPTCommandOptionType uint8
 
@@ -121,7 +126,7 @@ func handler(ctx *Context, params *ChatGPTCommandParams) {
 	})
 
 	// Get interaction ID so we can create a thread on top of it
-	m, err := ctx.Session.InteractionResponse(ctx.Interaction)
+	m, err := ctx.Response()
 	if err != nil {
 		// Without interaction reference we cannot create a thread with the response of ChatGPT
 		// Maybe in the future just try to post a new message instead, but for now just cancel
@@ -163,19 +168,34 @@ func handler(ctx *Context, params *ChatGPTCommandParams) {
 	}
 
 	// Set context of the conversation as a system message
-	cache := &cache.GPTMessagesCacheData{
+	cacheItem := &cache.GPTMessagesCacheData{
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleUser,
+				Content: prompt,
+			},
+		},
 		GPTModel: model,
 	}
-	params.MessagesCache.Add(thread.ID, cache)
+	params.MessagesCache.Add(thread.ID, cacheItem)
 	if context != "" {
-		cache.SystemMessage = &openai.ChatCompletionMessage{
+		cacheItem.SystemMessage = &openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleSystem,
 			Content: context,
 		}
 	}
 
-	// TODO: make ChatGPT request
-	print(channelMessage)
+	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.GPTModel, len(cacheItem.Messages))
+	resp, err := sendChatGPTRequest(params.OpenAIClient, cacheItem)
+	if err != nil {
+		// ChatGPT failed for whatever reason, tell users about it
+		log.Printf("[GID: %s, i.ID: %s] ChatGPT request ChatCompletion failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
+		ctx.EditMessage(channelMessage.ID, channelMessage.ChannelID, fmt.Sprintf("❌ ChatGPT request ChatCompletion failed with the error: %v", err))
+		return
+	}
+
+	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.GPTModel, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
+	ctx.EditMessage(channelMessage.ID, channelMessage.ChannelID, resp.content)
 }
 
 func messageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool) {
@@ -219,13 +239,15 @@ func messageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool
 
 	log.Printf("[GID: %s, CHID: %s, MID: %s] Handling new message in a potential GPT thread\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID)
 
-	if !params.MessagesCache.Contains(ctx.Message.ChannelID) {
+	cacheItem, ok := params.MessagesCache.Get(ctx.Message.ChannelID)
+	if !ok {
 		isGPTThread := true
+		cacheItem = &cache.GPTMessagesCacheData{}
 
 		var lastID string
 		retries := 0
 		for {
-			if retries >= DiscordChannelMessagesRequestMaxRetries {
+			if retries >= discordChannelMessagesRequestMaxRetries {
 				// max retries reached
 				break
 			}
@@ -235,7 +257,7 @@ func messageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool
 				// Since we cannot fetch messages, that means we cannot determine whether this a GPT thread,
 				// and if it was, we cannot get the full context to provide a better user experience. Do retries
 				// and print the error in the log
-				log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to get channel messages with the error: %v. Retries left: %d\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, err, (DiscordChannelMessagesRequestMaxRetries - retries))
+				log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to get channel messages with the error: %v. Retries left: %d\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, err, (discordChannelMessagesRequestMaxRetries - retries))
 				retries++
 				continue
 			}
@@ -245,10 +267,6 @@ func messageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool
 				if !shouldHandleMessageType(value.Type) {
 					// ignore message types that are
 					// not related to conversation
-					continue
-				}
-				if value.ID == ctx.Message.ID {
-					// avoid adding current message
 					continue
 				}
 				role := openai.ChatMessageRoleUser
@@ -283,15 +301,8 @@ func messageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool
 						model = constants.DefaultGPTModel
 					}
 
-					if item, ok := params.MessagesCache.Get(ctx.Message.ChannelID); ok {
-						item.SystemMessage = systemMessage
-						item.GPTModel = model
-					} else {
-						params.MessagesCache.Add(ctx.Message.ChannelID, &cache.GPTMessagesCacheData{
-							SystemMessage: systemMessage,
-							GPTModel:      model,
-						})
-					}
+					cacheItem.SystemMessage = systemMessage
+					cacheItem.GPTModel = model
 				}
 				transformed = append(transformed, openai.ChatCompletionMessage{
 					Role:    role,
@@ -302,13 +313,7 @@ func messageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool
 			reverseMessages(&transformed)
 
 			// Add the messages to the beginning of the main list
-			if item, ok := params.MessagesCache.Get(ctx.Message.ChannelID); ok {
-				item.Messages = append(transformed, item.Messages...)
-			} else {
-				params.MessagesCache.Add(ctx.Message.ChannelID, &cache.GPTMessagesCacheData{
-					Messages: transformed,
-				})
-			}
+			cacheItem.Messages = append(transformed, cacheItem.Messages...)
 
 			// If there are no more messages in the thread, break the loop
 			if len(batch) == 0 {
@@ -319,22 +324,21 @@ func messageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool
 			lastID = batch[len(batch)-1].ID
 		}
 
-		if retries >= DiscordChannelMessagesRequestMaxRetries {
+		if retries >= discordChannelMessagesRequestMaxRetries {
 			// max retries reached on fetching messages
-			// remove cache to make sure we retry again next time
 			log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to get channel messages. Reached max retries\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID)
-			params.MessagesCache.Remove(ctx.Message.ChannelID)
 			return false
 		}
 
 		if !isGPTThread {
-			// this was not a GPT thread, clear cache in case and move on
-			params.MessagesCache.Remove(ctx.Message.ChannelID)
+			// this was not a GPT thread
 			log.Printf("[GID: %s, CHID: %s, MID: %s] Not a GPT thread, saving to ignored cache to skip over it later\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID)
-			// save threadID to cache, so we can always ignore it later
+			// save threadID to ignored cache, so we can always ignore it later
 			(*params.IgnoredChannelsCache)[ctx.Message.ChannelID] = struct{}{}
 			return false
 		}
+
+		params.MessagesCache.Add(ctx.Message.ChannelID, cacheItem)
 	}
 
 	// Lock the thread while we are generating ChatGPT answser
@@ -342,16 +346,25 @@ func messageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool
 	// Unlock the thread at the end
 	defer utils.ToggleDiscordThreadLock(ctx.Session, ctx.Message.ChannelID, false)
 
-	channelMessage, err := ctx.Session.ChannelMessageSendReply(ctx.Message.ChannelID, constants.GenericPendingMessage, ctx.Message.Reference())
+	channelMessage, err := ctx.Reply(constants.GenericPendingMessage)
 	if err != nil {
 		// Without reply  we cannot edit message with the response of ChatGPT
 		// Maybe in the future just try to post a new message instead, but for now just cancel
 		log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to reply in the thread with the error: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, err)
-		return false
+		return true
 	}
 
-	// TODO: make ChatGPT request
-	print(channelMessage)
+	log.Printf("[GID: %s, CHID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, cacheItem.GPTModel, len(cacheItem.Messages))
+	resp, err := sendChatGPTRequest(params.OpenAIClient, cacheItem)
+	if err != nil {
+		// ChatGPT failed for whatever reason, tell users about it
+		log.Printf("[GID: %s, CHID: %s] ChatGPT request ChatCompletion failed with the error: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, err)
+		ctx.Edit(channelMessage.ID, channelMessage.ChannelID, fmt.Sprintf("❌ ChatGPT request ChatCompletion failed with the error: %v", err))
+		return true
+	}
+
+	log.Printf("[GID: %s, CHID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Message.GuildID, ctx.Message.ChannelID, cacheItem.GPTModel, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
+	ctx.Edit(channelMessage.ID, channelMessage.ChannelID, resp.content)
 
 	return true
 }
@@ -395,9 +408,45 @@ func reverseMessages(messages *[]openai.ChatCompletionMessage) {
 	}
 }
 
+type chatGPTResponse struct {
+	content string
+	usage   openai.Usage
+}
+
+func sendChatGPTRequest(client *openai.Client, cacheItem *cache.GPTMessagesCacheData) (*chatGPTResponse, error) {
+	// Create message with ChatGPT
+	messages := cacheItem.Messages
+	if cacheItem.SystemMessage != nil {
+		messages = append([]openai.ChatCompletionMessage{*cacheItem.SystemMessage}, messages...)
+	}
+
+	resp, err := client.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model:    cacheItem.GPTModel,
+			Messages: messages,
+			// Temperature: 0.1,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Save response to context cache
+	responseContent := resp.Choices[0].Message.Content
+	cacheItem.Messages = append(cacheItem.Messages, openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleAssistant,
+		Content: responseContent,
+	})
+	return &chatGPTResponse{
+		content: responseContent,
+		usage:   resp.Usage,
+	}, nil
+}
+
 func ChatGPTCommand(params *ChatGPTCommandParams) (c Command) {
 	return Command{
-		Name:                     "chatgpt",
+		Name:                     chatGPTCommandName,
 		Description:              "Start conversation with ChatGPT",
 		DMPermission:             false,
 		DefaultMemberPermissions: discord.PermissionViewChannel,
