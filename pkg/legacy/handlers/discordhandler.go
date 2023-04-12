@@ -6,8 +6,8 @@ import (
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
-	"github.com/raikerian/go-remai-bot-discord/pkg/commandhandlers/commandoptions"
 	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
+	"github.com/raikerian/go-remai-bot-discord/pkg/legacy/commandoptions"
 	"github.com/raikerian/go-remai-bot-discord/pkg/utils"
 	"github.com/sashabaranov/go-openai"
 )

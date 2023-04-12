@@ -7,9 +7,9 @@ import (
 	"syscall"
 
 	discord "github.com/bwmarrin/discordgo"
-	"github.com/raikerian/go-remai-bot-discord/pkg/bot/handlers"
 	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
 	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
+	"github.com/raikerian/go-remai-bot-discord/pkg/legacy/handlers"
 	"github.com/sashabaranov/go-openai"
 )
 

@@ -6,9 +6,9 @@ import (
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
-	"github.com/raikerian/go-remai-bot-discord/pkg/commandhandlers"
-	"github.com/raikerian/go-remai-bot-discord/pkg/commandhandlers/commandoptions"
 	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
+	"github.com/raikerian/go-remai-bot-discord/pkg/legacy/commandhandlers"
+	"github.com/raikerian/go-remai-bot-discord/pkg/legacy/commandoptions"
 	"github.com/sashabaranov/go-openai"
 	"gopkg.in/yaml.v2"
 )
