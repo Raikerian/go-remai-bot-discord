@@ -22,3 +22,14 @@ type MessageContext struct {
 
 	Handlers []MessageHandler
 }
+
+func (ctx *Context) Respond(response *discord.InteractionResponse) error {
+	return ctx.Session.InteractionRespond(ctx.Interaction, response)
+}
+
+func (ctx *Context) Edit(content string) error {
+	_, err := ctx.Session.InteractionResponseEdit(ctx.Interaction, &discord.WebhookEdit{
+		Content: &content,
+	})
+	return err
+}

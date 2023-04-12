@@ -12,6 +12,14 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
+type IgnoredChannelsCache map[string]struct{}
+
+type ChatGPTCommandParams struct {
+	OpenAIClient         *openai.Client
+	MessagesCache        *cache.GPTMessagesCache
+	IgnoredChannelsCache *IgnoredChannelsCache
+}
+
 const DiscordChannelMessagesRequestMaxRetries = 4
 
 type ChatGPTCommandOptionType uint8
@@ -46,8 +54,13 @@ func (t ChatGPTCommandOptionType) HumanReadableString() string {
 	return fmt.Sprintf("ApplicationCommandOptionType(%d)", t)
 }
 
-func handler(ctx *Context, messagesCache *cache.GPTMessagesCache) {
-	// TODO: ignore interactions invoked in threads
+func handler(ctx *Context, params *ChatGPTCommandParams) {
+	ch, err := ctx.Session.State.Channel(ctx.Interaction.ChannelID)
+	if err == nil && ch.IsThread() {
+		// ignore interactions invoked in threads
+		log.Printf("[GID: %s, i.ID: %s] Interaction was invoked in the existing thread, ignoring\n", ctx.Interaction.GuildID, ctx.Interaction.ID)
+		return
+	}
 
 	var prompt string
 	if option, ok := ctx.Options[ChatGPTCommandOptionPrompt.String()]; ok {
@@ -56,7 +69,12 @@ func handler(ctx *Context, messagesCache *cache.GPTMessagesCache) {
 		// We can't have empty prompt, unfortunately
 		// this should not happen, discord prevents empty required options
 		log.Printf("[GID: %s, i.ID: %s] Failed to parse prompt option\n", ctx.Interaction.GuildID, ctx.Interaction.ID)
-		interactrionRespond(ctx.Session, ctx.Interaction, "ERROR: Failed to parse prompt option", nil)
+		ctx.Respond(&discord.InteractionResponse{
+			Type: discord.InteractionResponseChannelMessageWithSource,
+			Data: &discord.InteractionResponseData{
+				Content: "ERROR: Failed to parse prompt option",
+			},
+		})
 		return
 	}
 
@@ -89,10 +107,16 @@ func handler(ctx *Context, messagesCache *cache.GPTMessagesCache) {
 	})
 
 	// Respond to interaction with a reference and user ping
-	interactrionRespond(ctx.Session, ctx.Interaction, fmt.Sprintf("<@%s>", ctx.Interaction.Member.User.ID), []*discord.MessageEmbed{
-		{
-			Title:  "ChatGPT request by " + ctx.Interaction.Member.User.Username + "#" + ctx.Interaction.Member.User.Discriminator,
-			Fields: fields,
+	ctx.Respond(&discord.InteractionResponse{
+		Type: discord.InteractionResponseChannelMessageWithSource,
+		Data: &discord.InteractionResponseData{
+			Content: fmt.Sprintf("<@%s>", ctx.Interaction.Member.User.ID),
+			Embeds: []*discord.MessageEmbed{
+				{
+					Title:  "ChatGPT request by " + ctx.Interaction.Member.User.Username + "#" + ctx.Interaction.Member.User.Discriminator,
+					Fields: fields,
+				},
+			},
 		},
 	})
 
@@ -102,13 +126,13 @@ func handler(ctx *Context, messagesCache *cache.GPTMessagesCache) {
 		// Without interaction reference we cannot create a thread with the response of ChatGPT
 		// Maybe in the future just try to post a new message instead, but for now just cancel
 		log.Printf("[GID: %s, i.ID: %s] Failed to get interaction reference with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
-		interactionEdit(ctx.Session, ctx.Interaction, fmt.Sprintf("Failed to get interaction reference with error: %v", err))
+		ctx.Edit(fmt.Sprintf("Failed to get interaction reference with error: %v", err))
 		return
 	}
 
-	ch, err := ctx.Session.State.Channel(m.ChannelID)
-	if err != nil || ch.IsThread() {
-		// TODO: handle err
+	ch, err = ctx.Session.State.Channel(m.ChannelID)
+	if err != nil || !ch.IsThread() {
+		log.Printf("[GID: %s, i.ID: %s] Message reply was not in a thread, or there was an error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
 		return
 	}
 
@@ -142,7 +166,7 @@ func handler(ctx *Context, messagesCache *cache.GPTMessagesCache) {
 	cache := &cache.GPTMessagesCacheData{
 		GPTModel: model,
 	}
-	messagesCache.Add(thread.ID, cache)
+	params.MessagesCache.Add(thread.ID, cache)
 	if context != "" {
 		cache.SystemMessage = &openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleSystem,
@@ -154,16 +178,16 @@ func handler(ctx *Context, messagesCache *cache.GPTMessagesCache) {
 	print(channelMessage)
 }
 
-func messageHandler(ctx *MessageContext, messagesCache *cache.GPTMessagesCache) (hit bool) {
+func messageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool) {
 	if ctx.Session.State.User.ID == ctx.Message.Author.ID {
 		// ignore self messages
 		return false
 	}
 
-	// if _, exists := (*params.IgnoredChannelsCache)[params.DiscordMessage.ChannelID]; exists {
-	// 	// skip over ignored channels list
-	// 	return
-	// }
+	if _, exists := (*params.IgnoredChannelsCache)[ctx.Message.ChannelID]; exists {
+		// skip over ignored channels list
+		return
+	}
 
 	if ctx.Message.Content == "" {
 		// ignore messages with empty content
@@ -178,7 +202,7 @@ func messageHandler(ctx *MessageContext, messagesCache *cache.GPTMessagesCache) 
 
 	if !ch.IsThread() {
 		// ignore non threads
-		// TODO: add to ignore channel list
+		(*params.IgnoredChannelsCache)[ctx.Message.ChannelID] = struct{}{}
 		return false
 	}
 
@@ -190,7 +214,7 @@ func messageHandler(ctx *MessageContext, messagesCache *cache.GPTMessagesCache) 
 
 	log.Printf("[GID: %s, CHID: %s, MID: %s] Handling new message in a potential GPT thread\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID)
 
-	if !messagesCache.Contains(ctx.Message.ChannelID) {
+	if !params.MessagesCache.Contains(ctx.Message.ChannelID) {
 		isGPTThread := true
 
 		var lastID string
@@ -249,11 +273,11 @@ func messageHandler(ctx *MessageContext, messagesCache *cache.GPTMessagesCache) 
 						model = constants.DefaultGPTModel
 					}
 
-					if item, ok := messagesCache.Get(ctx.Message.ChannelID); ok {
+					if item, ok := params.MessagesCache.Get(ctx.Message.ChannelID); ok {
 						item.SystemMessage = systemMessage
 						item.GPTModel = model
 					} else {
-						messagesCache.Add(ctx.Message.ChannelID, &cache.GPTMessagesCacheData{
+						params.MessagesCache.Add(ctx.Message.ChannelID, &cache.GPTMessagesCacheData{
 							SystemMessage: systemMessage,
 							GPTModel:      model,
 						})
@@ -268,10 +292,10 @@ func messageHandler(ctx *MessageContext, messagesCache *cache.GPTMessagesCache) 
 			reverseMessages(&transformed)
 
 			// Add the messages to the beginning of the main list
-			if item, ok := messagesCache.Get(ctx.Message.ChannelID); ok {
+			if item, ok := params.MessagesCache.Get(ctx.Message.ChannelID); ok {
 				item.Messages = append(transformed, item.Messages...)
 			} else {
-				messagesCache.Add(ctx.Message.ChannelID, &cache.GPTMessagesCacheData{
+				params.MessagesCache.Add(ctx.Message.ChannelID, &cache.GPTMessagesCacheData{
 					Messages: transformed,
 				})
 			}
@@ -289,17 +313,16 @@ func messageHandler(ctx *MessageContext, messagesCache *cache.GPTMessagesCache) 
 			// max retries reached on fetching messages
 			// remove cache to make sure we retry again next time
 			log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to get channel messages. Reached max retries\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID)
-			messagesCache.Remove(ctx.Message.ChannelID)
+			params.MessagesCache.Remove(ctx.Message.ChannelID)
 			return false
 		}
 
 		if !isGPTThread {
 			// this was not a GPT thread, clear cache in case and move on
-			messagesCache.Remove(ctx.Message.ChannelID)
+			params.MessagesCache.Remove(ctx.Message.ChannelID)
 			log.Printf("[GID: %s, CHID: %s, MID: %s] Not a GPT thread, saving to ignored cache to skip over it later\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID)
 			// save threadID to cache, so we can always ignore it later
-			// (*params.IgnoredChannelsCache)[params.DiscordMessage.ChannelID] = struct{}{}
-			// TODO: save to ignored cache
+			(*params.IgnoredChannelsCache)[ctx.Message.ChannelID] = struct{}{}
 			return false
 		}
 	}
@@ -323,7 +346,42 @@ func messageHandler(ctx *MessageContext, messagesCache *cache.GPTMessagesCache) 
 	return true
 }
 
-func ChatGPTCommand(client *openai.Client, cache *cache.GPTMessagesCache) (c Command) {
+func parseInteractionReply(discordMessage *discord.Message) (prompt string, context string, model string) {
+	if discordMessage.Embeds != nil && len(discordMessage.Embeds) > 0 {
+		for _, value := range discordMessage.Embeds[0].Fields {
+			switch value.Name {
+			case ChatGPTCommandOptionPrompt.HumanReadableString():
+				prompt = value.Value
+			case ChatGPTCommandOptionContext.HumanReadableString():
+				context = value.Value
+			case ChatGPTCommandOptionModel.HumanReadableString():
+				model = value.Value
+			}
+		}
+
+		return
+	}
+
+	// old format for backwards compatibility with threads from v0.0.x
+	// remove at some point later
+	if strings.Contains(discordMessage.Content, "\n") {
+		lines := strings.Split(discordMessage.Content, "\n")
+		prompt = strings.TrimPrefix(lines[1], "> ")
+		if len(lines) > 2 {
+			context = strings.TrimPrefix(lines[3], "> ")
+		}
+	}
+	return
+}
+
+func reverseMessages(messages *[]openai.ChatCompletionMessage) {
+	length := len(*messages)
+	for i := 0; i < length/2; i++ {
+		(*messages)[i], (*messages)[length-i-1] = (*messages)[length-i-1], (*messages)[i]
+	}
+}
+
+func ChatGPTCommand(params *ChatGPTCommandParams) (c Command) {
 	return Command{
 		Name:                     "chatgpt",
 		Description:              "Start conversation with ChatGPT",
@@ -360,63 +418,10 @@ func ChatGPTCommand(client *openai.Client, cache *cache.GPTMessagesCache) (c Com
 			},
 		},
 		Handler: HandlerFunc(func(ctx *Context) {
-			handler(ctx, cache)
+			handler(ctx, params)
 		}),
 		MessageHandler: MessageHandlerFunc(func(ctx *MessageContext) bool {
-			return messageHandler(ctx, cache)
+			return messageHandler(ctx, params)
 		}),
-	}
-}
-
-// TODO: remove or maybe move to utils
-func interactrionRespond(s *discord.Session, i *discord.Interaction, content string, embeds []*discord.MessageEmbed) {
-	s.InteractionRespond(i, &discord.InteractionResponse{
-		Type: discord.InteractionResponseChannelMessageWithSource,
-		Data: &discord.InteractionResponseData{
-			Content: content,
-			Embeds:  embeds,
-		},
-	})
-}
-
-// TODO: remove or maybe move to utils
-func interactionEdit(s *discord.Session, i *discord.Interaction, content string) {
-	s.InteractionResponseEdit(i, &discord.WebhookEdit{
-		Content: &content,
-	})
-}
-
-func parseInteractionReply(discordMessage *discord.Message) (prompt string, context string, model string) {
-	if discordMessage.Embeds != nil && len(discordMessage.Embeds) > 0 {
-		for _, value := range discordMessage.Embeds[0].Fields {
-			switch value.Name {
-			case ChatGPTCommandOptionPrompt.HumanReadableString():
-				prompt = value.Value
-			case ChatGPTCommandOptionContext.HumanReadableString():
-				context = value.Value
-			case ChatGPTCommandOptionModel.HumanReadableString():
-				model = value.Value
-			}
-		}
-
-		return
-	}
-
-	// old format for backwards compatibility with threads from v0.0.x
-	// remove at some point later
-	if strings.Contains(discordMessage.Content, "\n") {
-		lines := strings.Split(discordMessage.Content, "\n")
-		prompt = strings.TrimPrefix(lines[1], "> ")
-		if len(lines) > 2 {
-			context = strings.TrimPrefix(lines[3], "> ")
-		}
-	}
-	return
-}
-
-func reverseMessages(messages *[]openai.ChatCompletionMessage) {
-	length := len(*messages)
-	for i := 0; i < length/2; i++ {
-		(*messages)[i], (*messages)[length-i-1] = (*messages)[length-i-1], (*messages)[i]
 	}
 }
