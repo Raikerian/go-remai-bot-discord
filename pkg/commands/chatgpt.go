@@ -179,6 +179,11 @@ func handler(ctx *Context, params *ChatGPTCommandParams) {
 }
 
 func messageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool) {
+	if !shouldHandleMessageType(ctx.Message.Type) {
+		// ignore message types that should not be handled by this command
+		return false
+	}
+
 	if ctx.Session.State.User.ID == ctx.Message.Author.ID {
 		// ignore self messages
 		return false
@@ -186,7 +191,7 @@ func messageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool
 
 	if _, exists := (*params.IgnoredChannelsCache)[ctx.Message.ChannelID]; exists {
 		// skip over ignored channels list
-		return
+		return false
 	}
 
 	if ctx.Message.Content == "" {
@@ -237,6 +242,11 @@ func messageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool
 
 			transformed := make([]openai.ChatCompletionMessage, 0, len(batch))
 			for _, value := range batch {
+				if !shouldHandleMessageType(value.Type) {
+					// ignore message types that are
+					// not related to conversation
+					continue
+				}
 				if value.ID == ctx.Message.ID {
 					// avoid adding current message
 					continue
@@ -344,6 +354,10 @@ func messageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool
 	print(channelMessage)
 
 	return true
+}
+
+func shouldHandleMessageType(t discord.MessageType) (ok bool) {
+	return t == discord.MessageTypeDefault || t == discord.MessageTypeReply
 }
 
 func parseInteractionReply(discordMessage *discord.Message) (prompt string, context string, model string) {
