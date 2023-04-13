@@ -39,60 +39,6 @@ func init() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
-// var (
-// 	dmPermission                   = false
-// 	defaultMemberPermissions int64 = discord.PermissionViewChannel
-
-// 	chatGPTCommand = &discord.ApplicationCommand{
-// 		Name:                     constants.CommandTypeChatGPT,
-// 		Description:              "Start conversation with ChatGPT",
-// 		DefaultMemberPermissions: &defaultMemberPermissions,
-// 		DMPermission:             &dmPermission,
-// 		Options: []*discord.ApplicationCommandOption{
-// 			{
-// 				Type:        discord.ApplicationCommandOptionString,
-// 				Name:        commandoptions.ChatGPTCommandOptionPrompt.String(),
-// 				Description: "ChatGPT prompt",
-// 				Required:    true,
-// 			},
-// 			{
-// 				Type:        discord.ApplicationCommandOptionString,
-// 				Name:        commandoptions.ChatGPTCommandOptionContext.String(),
-// 				Description: "Sets context that guides the AI assistant's behavior during the conversation",
-// 				Required:    false,
-// 			},
-// 			{
-// 				Type:        discord.ApplicationCommandOptionString,
-// 				Name:        commandoptions.ChatGPTCommandOptionModel.String(),
-// 				Description: "GPT model",
-// 				Required:    false,
-// 				Choices: []*discord.ApplicationCommandOptionChoice{
-// 					{
-// 						Name:  "GPT-3.5-Turbo (Default)",
-// 						Value: openai.GPT3Dot5Turbo,
-// 					},
-// 					{
-// 						Name:  "GPT-4",
-// 						Value: openai.GPT4,
-// 					},
-// 				},
-// 			},
-// 		},
-// 	}
-
-// 	infoCommand = &discord.ApplicationCommand{
-// 		Name:                     "info",
-// 		Description:              "Show information about current version of Rem AI",
-// 		DefaultMemberPermissions: &defaultMemberPermissions,
-// 		DMPermission:             &dmPermission,
-// 	}
-
-// 	commands = []*discord.ApplicationCommand{
-// 		chatGPTCommand,
-// 		infoCommand,
-// 	}
-// )
-
 var (
 	discordBot   *bot.Bot
 	openaiClient *openai.Client
