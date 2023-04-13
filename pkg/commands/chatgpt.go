@@ -16,6 +16,11 @@ const (
 	chatGPTCommandName = "chatgpt"
 
 	discordChannelMessagesRequestMaxRetries = 4
+
+	emojiAck = "⌛"
+	emojiErr = "❌"
+
+	pricePerTokenGPT3Dot5Turbo = 0.000002
 )
 
 type IgnoredChannelsCache map[string]struct{}
@@ -191,12 +196,20 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 	if err != nil {
 		// ChatGPT failed for whatever reason, tell users about it
 		log.Printf("[GID: %s, i.ID: %s] ChatGPT request ChatCompletion failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
-		ctx.EditMessage(channelMessage.ID, channelMessage.ChannelID, fmt.Sprintf("❌ ChatGPT request ChatCompletion failed with the error: %v", err))
+		emptyString := ""
+		utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &emptyString, []*discord.MessageEmbed{
+			{
+				Title:       "❌ OpenAI API failed",
+				Description: err.Error(),
+				Color:       0xff0000,
+			},
+		})
 		return
 	}
 
 	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.GPTModel, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
-	ctx.EditMessage(channelMessage.ID, channelMessage.ChannelID, resp.content)
+	utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &resp.content, nil)
+	attachUsageInfo(ctx.Session, channelMessage, resp.usage, cacheItem.GPTModel)
 }
 
 func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool) {
@@ -351,25 +364,34 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 	// Unlock the thread at the end
 	defer utils.ToggleDiscordThreadLock(ctx.Session, ctx.Message.ChannelID, false)
 
-	channelMessage, err := ctx.Reply(constants.GenericPendingMessage)
-	if err != nil {
-		// Without reply  we cannot edit message with the response of ChatGPT
-		// Maybe in the future just try to post a new message instead, but for now just cancel
-		log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to reply in the thread with the error: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, err)
-		return true
-	}
+	ctx.AddReaction(emojiAck)
+	defer ctx.RemoveReaction(emojiAck)
+	ctx.ChannelTyping()
 
 	log.Printf("[GID: %s, CHID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, cacheItem.GPTModel, len(cacheItem.Messages))
 	resp, err := sendChatGPTRequest(params.OpenAIClient, cacheItem)
 	if err != nil {
 		// ChatGPT failed for whatever reason, tell users about it
 		log.Printf("[GID: %s, CHID: %s] ChatGPT request ChatCompletion failed with the error: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, err)
-		ctx.Edit(channelMessage.ID, channelMessage.ChannelID, fmt.Sprintf("❌ ChatGPT request ChatCompletion failed with the error: %v", err))
+		ctx.AddReaction(emojiErr)
+		ctx.EmbedReply(&discord.MessageEmbed{
+			Title:       "❌ OpenAI API failed",
+			Description: err.Error(),
+			Color:       0xff0000,
+		})
 		return true
 	}
 
 	log.Printf("[GID: %s, CHID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Message.GuildID, ctx.Message.ChannelID, cacheItem.GPTModel, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
-	ctx.Edit(channelMessage.ID, channelMessage.ChannelID, resp.content)
+
+	replyMessage, err := ctx.Reply(resp.content)
+	if err != nil {
+		log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to reply in the thread with the error: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, err)
+		ctx.AddReaction(emojiErr)
+		return true
+	}
+
+	attachUsageInfo(ctx.Session, replyMessage, resp.usage, cacheItem.GPTModel)
 
 	return true
 }
@@ -438,6 +460,23 @@ func sendChatGPTRequest(client *openai.Client, cacheItem *cache.GPTMessagesCache
 		content: responseContent,
 		usage:   resp.Usage,
 	}, nil
+}
+
+func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage, model string) {
+	extraInfo := fmt.Sprintf("Completion Tokens: %d, Total: %d", usage.CompletionTokens, usage.TotalTokens)
+	if model == openai.GPT3Dot5Turbo {
+		extraInfo += fmt.Sprintf("\nLLM Cost: $%f", float64(usage.TotalTokens)*pricePerTokenGPT3Dot5Turbo)
+	}
+	utils.DiscordChannelMessageEdit(s, m.ID, m.ChannelID, nil, []*discord.MessageEmbed{
+		{
+			Fields: []*discord.MessageEmbedField{
+				{
+					Name:  "Usage",
+					Value: extraInfo,
+				},
+			},
+		},
+	})
 }
 
 func ChatGPTCommand(params *ChatGPTCommandParams) *Command {

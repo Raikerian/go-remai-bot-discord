@@ -14,7 +14,6 @@ func ToggleDiscordThreadLock(s *discord.Session, channelID string, locked bool) 
 	if err != nil {
 		log.Printf("[CHID: %s] Failed to lock/unlock Thread with the error: %v\n", channelID, err)
 	}
-	return
 }
 
 // Sends a message to a specified Discord channel, either as a reply to another message if a message reference is provided or as a standalone message if the message reference is nil
@@ -25,4 +24,16 @@ func DiscordChannelMessageSend(s *discord.Session, channelID string, content str
 		m, err = s.ChannelMessageSend(channelID, content)
 	}
 	return
+}
+
+func DiscordChannelMessageEdit(s *discord.Session, messageID string, channelID string, content *string, embeds []*discord.MessageEmbed) error {
+	_, err := s.ChannelMessageEditComplex(
+		&discord.MessageEdit{
+			Content: content,
+			Embeds:  embeds,
+			ID:      messageID,
+			Channel: channelID,
+		},
+	)
+	return err
 }

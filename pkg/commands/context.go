@@ -51,17 +51,6 @@ func (ctx *Context) Response() (*discord.Message, error) {
 	return ctx.Session.InteractionResponse(ctx.Interaction)
 }
 
-func (ctx *Context) EditMessage(messageID string, channelID string, content string) error {
-	_, err := ctx.Session.ChannelMessageEditComplex(
-		&discord.MessageEdit{
-			Content: &content,
-			ID:      messageID,
-			Channel: channelID,
-		},
-	)
-	return err
-}
-
 func (ctx *Context) Next() {
 	if ctx.handlers == nil || len(ctx.handlers) == 0 {
 		return
@@ -104,15 +93,25 @@ func (ctx *MessageContext) Reply(content string) (m *discord.Message, err error)
 	return
 }
 
-func (ctx *MessageContext) Edit(messageID string, channelID string, content string) error {
-	_, err := ctx.Session.ChannelMessageEditComplex(
-		&discord.MessageEdit{
-			Content: &content,
-			ID:      messageID,
-			Channel: channelID,
-		},
+func (ctx *MessageContext) EmbedReply(embed *discord.MessageEmbed) (m *discord.Message, err error) {
+	m, err = ctx.Session.ChannelMessageSendEmbedReply(
+		ctx.Message.ChannelID,
+		embed,
+		ctx.Message.Reference(),
 	)
-	return err
+	return
+}
+
+func (ctx *MessageContext) AddReaction(emojiID string) error {
+	return ctx.Session.MessageReactionAdd(ctx.Message.ChannelID, ctx.Message.ID, emojiID)
+}
+
+func (ctx *MessageContext) RemoveReaction(emojiID string) error {
+	return ctx.Session.MessageReactionsRemoveEmoji(ctx.Message.ChannelID, ctx.Message.ID, emojiID)
+}
+
+func (ctx *MessageContext) ChannelTyping() error {
+	return ctx.Session.ChannelTyping(ctx.Message.ChannelID)
 }
 
 func (ctx *MessageContext) Next() {
