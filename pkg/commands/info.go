@@ -38,8 +38,8 @@ func infoHandler(ctx *Context) {
 	})
 }
 
-func InfoCommand() Command {
-	return Command{
+func InfoCommand() *Command {
+	return &Command{
 		Name:                     infoCommandName,
 		Description:              "Show information about current version of Rem AI",
 		DMPermission:             true,

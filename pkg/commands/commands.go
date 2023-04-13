@@ -1,8 +1,6 @@
 package commands
 
-import (
-	discord "github.com/bwmarrin/discordgo"
-)
+import discord "github.com/bwmarrin/discordgo"
 
 type Handler interface {
 	HandleCommand(ctx *Context)
@@ -26,8 +24,12 @@ type Command struct {
 	DMPermission             bool
 	DefaultMemberPermissions int64
 	Options                  []*discord.ApplicationCommandOption
-	Handler                  Handler
-	MessageHandler           MessageHandler
+
+	Handler     Handler
+	Middlewares []Handler
+
+	MessageHandler     MessageHandler
+	MessageMiddlewares []MessageHandler
 }
 
 func (cmd Command) ApplicationCommand() *discord.ApplicationCommand {

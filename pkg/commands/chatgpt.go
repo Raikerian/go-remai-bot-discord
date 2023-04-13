@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
@@ -66,6 +65,8 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 		log.Printf("[GID: %s, i.ID: %s] Interaction was invoked in the existing thread, ignoring\n", ctx.Interaction.GuildID, ctx.Interaction.ID)
 		return
 	}
+
+	log.Printf("[GID: %s, i.ID: %s] Interaction invoked by UserID: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, ctx.Interaction.Member.User.ID)
 
 	var prompt string
 	if option, ok := ctx.Options[ChatGPTCommandOptionPrompt.String()]; ok {
@@ -136,8 +137,8 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 	}
 
 	ch, err = ctx.Session.State.Channel(m.ChannelID)
-	if err != nil || !ch.IsThread() {
-		log.Printf("[GID: %s, i.ID: %s] Message reply was not in a thread, or there was an error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
+	if err != nil || ch.IsThread() {
+		log.Printf("[GID: %s, i.ID: %s] Interaction reply was in a thread, or there was an error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
 		return
 	}
 
@@ -264,11 +265,6 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 
 			transformed := make([]openai.ChatCompletionMessage, 0, len(batch))
 			for _, value := range batch {
-				if !shouldHandleMessageType(value.Type) {
-					// ignore message types that are
-					// not related to conversation
-					continue
-				}
 				role := openai.ChatMessageRoleUser
 				if value.Author.ID == ctx.Session.State.User.ID {
 					role = openai.ChatMessageRoleAssistant
@@ -303,6 +299,10 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 
 					cacheItem.SystemMessage = systemMessage
 					cacheItem.GPTModel = model
+				} else if !shouldHandleMessageType(value.Type) {
+					// ignore message types that are
+					// not related to conversation
+					continue
 				}
 				transformed = append(transformed, openai.ChatCompletionMessage{
 					Role:    role,
@@ -339,6 +339,11 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 		}
 
 		params.MessagesCache.Add(ctx.Message.ChannelID, cacheItem)
+	} else {
+		cacheItem.Messages = append(cacheItem.Messages, openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleUser,
+			Content: ctx.Message.Content,
+		})
 	}
 
 	// Lock the thread while we are generating ChatGPT answser
@@ -374,30 +379,21 @@ func shouldHandleMessageType(t discord.MessageType) (ok bool) {
 }
 
 func parseInteractionReply(discordMessage *discord.Message) (prompt string, context string, model string) {
-	if discordMessage.Embeds != nil && len(discordMessage.Embeds) > 0 {
-		for _, value := range discordMessage.Embeds[0].Fields {
-			switch value.Name {
-			case ChatGPTCommandOptionPrompt.HumanReadableString():
-				prompt = value.Value
-			case ChatGPTCommandOptionContext.HumanReadableString():
-				context = value.Value
-			case ChatGPTCommandOptionModel.HumanReadableString():
-				model = value.Value
-			}
-		}
-
+	if discordMessage.Embeds == nil || len(discordMessage.Embeds) == 0 {
 		return
 	}
 
-	// old format for backwards compatibility with threads from v0.0.x
-	// remove at some point later
-	if strings.Contains(discordMessage.Content, "\n") {
-		lines := strings.Split(discordMessage.Content, "\n")
-		prompt = strings.TrimPrefix(lines[1], "> ")
-		if len(lines) > 2 {
-			context = strings.TrimPrefix(lines[3], "> ")
+	for _, value := range discordMessage.Embeds[0].Fields {
+		switch value.Name {
+		case ChatGPTCommandOptionPrompt.HumanReadableString():
+			prompt = value.Value
+		case ChatGPTCommandOptionContext.HumanReadableString():
+			context = value.Value
+		case ChatGPTCommandOptionModel.HumanReadableString():
+			model = value.Value
 		}
 	}
+
 	return
 }
 
@@ -444,8 +440,8 @@ func sendChatGPTRequest(client *openai.Client, cacheItem *cache.GPTMessagesCache
 	}, nil
 }
 
-func ChatGPTCommand(params *ChatGPTCommandParams) Command {
-	return Command{
+func ChatGPTCommand(params *ChatGPTCommandParams) *Command {
+	return &Command{
 		Name:                     chatGPTCommandName,
 		Description:              "Start conversation with ChatGPT",
 		DMPermission:             false,

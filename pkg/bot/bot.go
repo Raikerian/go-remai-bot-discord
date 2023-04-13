@@ -7,86 +7,46 @@ import (
 	"syscall"
 
 	discord "github.com/bwmarrin/discordgo"
-	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
-	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
-	"github.com/raikerian/go-remai-bot-discord/pkg/legacy/handlers"
-	"github.com/sashabaranov/go-openai"
 )
 
 type Bot struct {
-	session          *discord.Session
-	openaiClient     *openai.Client
-	commandHandlers  map[string]func(s *discord.Session, i *discord.InteractionCreate)
-	gptMessagesCache *cache.GPTMessagesCache
+	*discord.Session
+
+	Router *Router
 }
 
-var ignoredChannelsCache = make(map[string]struct{})
-
-func NewBot(session *discord.Session, openaiClient *openai.Client) *Bot {
-	cache, err := cache.NewGPTMessagesCache(constants.DiscordThreadsCacheSize)
+func NewBot(token string) (*Bot, error) {
+	session, err := discord.New("Bot " + token)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	return &Bot{
-		session:          session,
-		openaiClient:     openaiClient,
-		commandHandlers:  make(map[string]func(s *discord.Session, i *discord.InteractionCreate)),
-		gptMessagesCache: cache,
-	}
+		Session: session,
+		Router:  NewRouter(),
+	}, nil
 }
 
-func (b *Bot) RegisterCommandHandler(name string, handler func(s *discord.Session, i *discord.InteractionCreate)) {
-	b.commandHandlers[name] = handler
-}
+func (b *Bot) Run(guildID string, removeCommands bool) {
+	// IntentMessageContent is required for us to have a conversation in threads without typing any commands
+	b.Identify.Intents = discord.MakeIntent(discord.IntentsAllWithoutPrivileged | discord.IntentMessageContent)
 
-func (b *Bot) GPTMessagesCache() *cache.GPTMessagesCache {
-	return b.gptMessagesCache
-}
-
-func (b *Bot) Run(commands []*discord.ApplicationCommand, guildID string, removeCommands bool) {
-	// basic info
-	b.session.AddHandler(func(s *discord.Session, r *discord.Ready) {
+	// Add handlers
+	b.AddHandler(func(s *discord.Session, r *discord.Ready) {
 		log.Printf("Logged in as: %v#%v", s.State.User.Username, s.State.User.Discriminator)
 	})
-
-	// Register handlers
-	b.session.AddHandler(func(s *discord.Session, i *discord.InteractionCreate) {
-		if h, ok := b.commandHandlers[i.ApplicationCommandData().Name]; ok {
-			h(s, i)
-		}
-	})
-
-	b.session.AddHandler(func(s *discord.Session, m *discord.MessageCreate) {
-		handlers.OnDiscordMessageCreate(handlers.DiscordMessageCreateParams{
-			DiscordSession:       s,
-			DiscordMessage:       m,
-			OpenAIClient:         b.openaiClient,
-			GPTMessagesCache:     b.gptMessagesCache,
-			IgnoredChannelsCache: &ignoredChannelsCache,
-		})
-	})
-
-	// IntentMessageContent is required for us to have a conversation in threads without typing any commands
-	b.session.Identify.Intents = discord.MakeIntent(discord.IntentsAllWithoutPrivileged | discord.IntentMessageContent)
+	b.AddHandler(b.Router.HandleInteraction)
+	b.AddHandler(b.Router.HandleMessage)
 
 	// Run the bot
-	err := b.session.Open()
+	err := b.Open()
 	if err != nil {
 		log.Fatalf("Cannot open the session: %v", err)
 	}
 
-	// Register commands
-	log.Println("Adding commands...")
-	registeredCommands := make([]*discord.ApplicationCommand, len(commands))
-	for i, v := range commands {
-		cmd, err := b.session.ApplicationCommandCreate(b.session.State.User.ID, guildID, v)
-		if err != nil {
-			log.Panicf("Cannot create '%v' command: %v", v.Name, err)
-		}
-		registeredCommands[i] = cmd
-	}
+	// Sync commands
+	b.Router.Sync(b.Session, guildID)
 
-	defer b.session.Close()
+	defer b.Close()
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -94,27 +54,9 @@ func (b *Bot) Run(commands []*discord.ApplicationCommand, guildID string, remove
 
 	// Unregister commands if requested
 	if removeCommands {
-		b.removeCommands(registeredCommands, guildID)
+		log.Println("Removing commands...")
+		b.Router.ClearCommands(b.Session, guildID)
 	}
 
 	log.Println("Gracefully shutting down.")
-}
-
-func (b *Bot) removeCommands(registeredCommands []*discord.ApplicationCommand, guildID string) {
-	log.Println("Removing commands...")
-	// // We need to fetch the commands, since deleting requires the command ID.
-	// // We are doing this from the returned commands on line 375, because using
-	// // this will delete all the commands, which might not be desirable, so we
-	// // are deleting only the commands that we added.
-	// registeredCommands, err := s.ApplicationCommands(s.State.User.ID, *GuildID)
-	// if err != nil {
-	// 	log.Fatalf("Could not fetch registered commands: %v", err)
-	// }
-
-	for _, v := range registeredCommands {
-		err := b.session.ApplicationCommandDelete(b.session.State.User.ID, guildID, v.ID)
-		if err != nil {
-			log.Panicf("Cannot delete '%v' command: %v", v.Name, err)
-		}
-	}
 }
