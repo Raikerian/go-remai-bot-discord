@@ -59,7 +59,7 @@ func (t ChatGPTCommandOptionType) HumanReadableString() string {
 	return fmt.Sprintf("ApplicationCommandOptionType(%d)", t)
 }
 
-func handler(ctx *Context, params *ChatGPTCommandParams) {
+func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 	ch, err := ctx.Session.State.Channel(ctx.Interaction.ChannelID)
 	if err == nil && ch.IsThread() {
 		// ignore interactions invoked in threads
@@ -198,7 +198,7 @@ func handler(ctx *Context, params *ChatGPTCommandParams) {
 	ctx.EditMessage(channelMessage.ID, channelMessage.ChannelID, resp.content)
 }
 
-func messageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool) {
+func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool) {
 	if !shouldHandleMessageType(ctx.Message.Type) {
 		// ignore message types that should not be handled by this command
 		return false
@@ -444,7 +444,7 @@ func sendChatGPTRequest(client *openai.Client, cacheItem *cache.GPTMessagesCache
 	}, nil
 }
 
-func ChatGPTCommand(params *ChatGPTCommandParams) (c Command) {
+func ChatGPTCommand(params *ChatGPTCommandParams) Command {
 	return Command{
 		Name:                     chatGPTCommandName,
 		Description:              "Start conversation with ChatGPT",
@@ -481,10 +481,10 @@ func ChatGPTCommand(params *ChatGPTCommandParams) (c Command) {
 			},
 		},
 		Handler: HandlerFunc(func(ctx *Context) {
-			handler(ctx, params)
+			chatGPTHandler(ctx, params)
 		}),
 		MessageHandler: MessageHandlerFunc(func(ctx *MessageContext) bool {
-			return messageHandler(ctx, params)
+			return chatGPTMessageHandler(ctx, params)
 		}),
 	}
 }
