@@ -208,7 +208,19 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 	}
 
 	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.GPTModel, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
-	utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &resp.content, nil)
+	err = utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &resp.content, nil)
+	if err != nil {
+		emptyString := ""
+		utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &emptyString, []*discord.MessageEmbed{
+			{
+				Title:       "❌ Discord API Error",
+				Description: err.Error(),
+				Color:       0xff0000,
+			},
+		})
+		return
+	}
+
 	attachUsageInfo(ctx.Session, channelMessage, resp.usage, cacheItem.GPTModel)
 }
 
@@ -388,6 +400,11 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 	if err != nil {
 		log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to reply in the thread with the error: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, err)
 		ctx.AddReaction(emojiErr)
+		ctx.EmbedReply(&discord.MessageEmbed{
+			Title:       "❌ Discord API Error",
+			Description: err.Error(),
+			Color:       0xff0000,
+		})
 		return true
 	}
 
