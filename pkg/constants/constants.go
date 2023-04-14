@@ -3,7 +3,7 @@ package constants
 import "github.com/sashabaranov/go-openai"
 
 const (
-	Version = "0.2.2"
+	Version = "0.3.0"
 
 	DiscordThreadsCacheSize = 32
 
