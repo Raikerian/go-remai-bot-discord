@@ -157,6 +157,7 @@ func imageHandler(ctx *Context, params *ImageCommandParams) {
 			N:              number,
 			Size:           size,
 			ResponseFormat: openai.CreateImageResponseFormatB64JSON,
+			User:           ctx.Interaction.Member.User.ID,
 		},
 	)
 	if err != nil {

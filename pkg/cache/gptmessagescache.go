@@ -2,7 +2,6 @@ package cache
 
 import (
 	lru "github.com/hashicorp/golang-lru/v2"
-	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -17,7 +16,7 @@ type GPTMessagesCacheData struct {
 }
 
 func NewGPTMessagesCache(size int) (*GPTMessagesCache, error) {
-	lruCache, err := lru.New[string, *GPTMessagesCacheData](constants.DiscordThreadsCacheSize)
+	lruCache, err := lru.New[string, *GPTMessagesCacheData](size)
 	if err != nil {
 		return nil, err
 	}
