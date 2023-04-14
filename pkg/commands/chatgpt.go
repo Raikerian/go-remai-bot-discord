@@ -71,7 +71,7 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 		return
 	}
 
-	log.Printf("[GID: %s, i.ID: %s] Interaction invoked by UserID: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, ctx.Interaction.Member.User.ID)
+	log.Printf("[GID: %s, i.ID: %s] ChatGPT interaction invoked by UserID: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, ctx.Interaction.Member.User.ID)
 
 	var prompt string
 	if option, ok := ctx.Options[ChatGPTCommandOptionPrompt.String()]; ok {
@@ -118,7 +118,7 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 	})
 
 	// Respond to interaction with a reference and user ping
-	ctx.Respond(&discord.InteractionResponse{
+	err = ctx.Respond(&discord.InteractionResponse{
 		Type: discord.InteractionResponseChannelMessageWithSource,
 		Data: &discord.InteractionResponseData{
 			Content: fmt.Sprintf("<@%s>", ctx.Interaction.Member.User.ID),
@@ -130,6 +130,10 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 			},
 		},
 	})
+	if err != nil {
+		log.Printf("[GID: %s, i.ID: %s] Failed to respond to interactrion with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
+		return
+	}
 
 	// Get interaction ID so we can create a thread on top of it
 	m, err := ctx.Response()
@@ -195,7 +199,7 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 	resp, err := sendChatGPTRequest(params.OpenAIClient, cacheItem)
 	if err != nil {
 		// ChatGPT failed for whatever reason, tell users about it
-		log.Printf("[GID: %s, i.ID: %s] ChatGPT request ChatCompletion failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
+		log.Printf("[GID: %s, i.ID: %s] OpenAI request ChatCompletion failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
 		emptyString := ""
 		utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &emptyString, []*discord.MessageEmbed{
 			{
@@ -210,6 +214,7 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.GPTModel, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
 	err = utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &resp.content, nil)
 	if err != nil {
+		log.Printf("[GID: %s, i.ID: %s] Discord API failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
 		emptyString := ""
 		utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &emptyString, []*discord.MessageEmbed{
 			{
@@ -460,7 +465,6 @@ func sendChatGPTRequest(client *openai.Client, cacheItem *cache.GPTMessagesCache
 		openai.ChatCompletionRequest{
 			Model:    cacheItem.GPTModel,
 			Messages: messages,
-			// Temperature: 0.1,
 		},
 	)
 	if err != nil {
