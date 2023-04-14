@@ -7,7 +7,6 @@ import (
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
-	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 	"github.com/raikerian/go-remai-bot-discord/pkg/utils"
 	"github.com/sashabaranov/go-openai"
 )
@@ -15,12 +14,19 @@ import (
 const (
 	chatGPTCommandName = "chatgpt"
 
-	discordChannelMessagesRequestMaxRetries = 4
+	chatGPTDefaultModel                            = openai.GPT3Dot5Turbo
+	chatGPTDiscordChannelMessagesRequestMaxRetries = 4
 
-	emojiAck = "⌛"
-	emojiErr = "❌"
+	// Discord expects the auto_archive_duration to be one of the following values: 60, 1440, 4320, or 10080,
+	// which represent the number of minutes before a thread is automatically archived
+	// (1 hour, 1 day, 3 days, or 7 days, respectively).
+	ChatGPTDiscordThreadAutoArchivewDurationMinutes = 60
 
-	pricePerTokenGPT3Dot5Turbo = 0.000002
+	chatGPTPendingMessage = "⌛ Wait a moment, please..."
+	chatGPTEmojiAck       = "⌛"
+	chatGPTEmojiErr       = "❌"
+
+	chatGPTPricePerTokenGPT3Dot5Turbo = 0.000002
 )
 
 type IgnoredChannelsCache map[string]struct{}
@@ -107,7 +113,7 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 		log.Printf("[GID: %s, i.ID: %s] Context provided: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, context)
 	}
 
-	model := constants.DefaultGPTModel
+	model := chatGPTDefaultModel
 	if option, ok := ctx.Options[ChatGPTCommandOptionModel.String()]; ok {
 		model = option.StringValue()
 		log.Printf("[GID: %s, i.ID: %s] Model provided: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, model)
@@ -153,7 +159,7 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 
 	thread, err := ctx.Session.MessageThreadStartComplex(m.ChannelID, m.ID, &discord.ThreadStart{
 		Name:                model + " conversation with " + ctx.Interaction.Member.User.Username,
-		AutoArchiveDuration: constants.DiscordThreadAutoArchivewDurationMinutes,
+		AutoArchiveDuration: ChatGPTDiscordThreadAutoArchivewDurationMinutes,
 		Invitable:           false,
 	})
 
@@ -169,7 +175,7 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 	// Unlock the thread at the end
 	defer utils.ToggleDiscordThreadLock(ctx.Session, thread.ID, false)
 
-	channelMessage, err := utils.DiscordChannelMessageSend(ctx.Session, thread.ID, constants.GenericPendingMessage, nil)
+	channelMessage, err := utils.DiscordChannelMessageSend(ctx.Session, thread.ID, chatGPTPendingMessage, nil)
 	if err != nil {
 		// Without reply  we cannot edit message with the response of ChatGPT
 		// Maybe in the future just try to post a new message instead, but for now just cancel
@@ -278,7 +284,7 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 		var lastID string
 		retries := 0
 		for {
-			if retries >= discordChannelMessagesRequestMaxRetries {
+			if retries >= chatGPTDiscordChannelMessagesRequestMaxRetries {
 				// max retries reached
 				break
 			}
@@ -288,7 +294,7 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 				// Since we cannot fetch messages, that means we cannot determine whether this a GPT thread,
 				// and if it was, we cannot get the full context to provide a better user experience. Do retries
 				// and print the error in the log
-				log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to get channel messages with the error: %v. Retries left: %d\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, err, (discordChannelMessagesRequestMaxRetries - retries))
+				log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to get channel messages with the error: %v. Retries left: %d\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, err, (chatGPTDiscordChannelMessagesRequestMaxRetries - retries))
 				retries++
 				continue
 			}
@@ -324,7 +330,7 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 						}
 					}
 					if model == "" {
-						model = constants.DefaultGPTModel
+						model = chatGPTDefaultModel
 					}
 
 					cacheItem.SystemMessage = systemMessage
@@ -354,7 +360,7 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 			lastID = batch[len(batch)-1].ID
 		}
 
-		if retries >= discordChannelMessagesRequestMaxRetries {
+		if retries >= chatGPTDiscordChannelMessagesRequestMaxRetries {
 			// max retries reached on fetching messages
 			log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to get channel messages. Reached max retries\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID)
 			return false
@@ -381,8 +387,8 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 	// Unlock the thread at the end
 	defer utils.ToggleDiscordThreadLock(ctx.Session, ctx.Message.ChannelID, false)
 
-	ctx.AddReaction(emojiAck)
-	defer ctx.RemoveReaction(emojiAck)
+	ctx.AddReaction(chatGPTEmojiAck)
+	defer ctx.RemoveReaction(chatGPTEmojiAck)
 	ctx.ChannelTyping()
 
 	log.Printf("[GID: %s, CHID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, cacheItem.GPTModel, len(cacheItem.Messages))
@@ -390,7 +396,7 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 	if err != nil {
 		// ChatGPT failed for whatever reason, tell users about it
 		log.Printf("[GID: %s, CHID: %s] ChatGPT request ChatCompletion failed with the error: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, err)
-		ctx.AddReaction(emojiErr)
+		ctx.AddReaction(chatGPTEmojiErr)
 		ctx.EmbedReply(&discord.MessageEmbed{
 			Title:       "❌ OpenAI API failed",
 			Description: err.Error(),
@@ -404,7 +410,7 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 	replyMessage, err := ctx.Reply(resp.content)
 	if err != nil {
 		log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to reply in the thread with the error: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, err)
-		ctx.AddReaction(emojiErr)
+		ctx.AddReaction(chatGPTEmojiErr)
 		ctx.EmbedReply(&discord.MessageEmbed{
 			Title:       "❌ Discord API Error",
 			Description: err.Error(),
@@ -486,7 +492,7 @@ func sendChatGPTRequest(client *openai.Client, cacheItem *cache.GPTMessagesCache
 func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage, model string) {
 	extraInfo := fmt.Sprintf("Completion Tokens: %d, Total: %d", usage.CompletionTokens, usage.TotalTokens)
 	if model == openai.GPT3Dot5Turbo {
-		extraInfo += fmt.Sprintf("\nLLM Cost: $%f", float64(usage.TotalTokens)*pricePerTokenGPT3Dot5Turbo)
+		extraInfo += fmt.Sprintf("\nLLM Cost: $%f", float64(usage.TotalTokens)*chatGPTPricePerTokenGPT3Dot5Turbo)
 	}
 	utils.DiscordChannelMessageEdit(s, m.ID, m.ChannelID, nil, []*discord.MessageEmbed{
 		{
