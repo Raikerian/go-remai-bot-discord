@@ -158,7 +158,7 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 	}
 
 	thread, err := ctx.Session.MessageThreadStartComplex(m.ChannelID, m.ID, &discord.ThreadStart{
-		Name:                model + " conversation with " + ctx.Interaction.Member.User.Username,
+		Name:                "New chat",
 		AutoArchiveDuration: ChatGPTDiscordThreadAutoArchivewDurationMinutes,
 		Invitable:           false,
 	})
@@ -168,6 +168,8 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 		log.Printf("[GID: %s, i.ID: %s] Failed to create a thread with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
 		return
 	}
+
+	go generateThreadTitleBasedOnInitialPrompt(ctx, params.OpenAIClient, thread.ID, prompt)
 
 	// Lock the thread while we are generating ChatGPT answser
 	utils.ToggleDiscordThreadLock(ctx.Session, thread.ID, true)
@@ -487,6 +489,29 @@ func sendChatGPTRequest(client *openai.Client, cacheItem *cache.GPTMessagesCache
 		content: responseContent,
 		usage:   resp.Usage,
 	}, nil
+}
+
+func generateThreadTitleBasedOnInitialPrompt(ctx *Context, client *openai.Client, threadID string, prompt string) {
+	resp, err := client.CreateChatCompletion(context.Background(), openai.ChatCompletionRequest{
+		Model: openai.GPT3Dot5Turbo,
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleUser,
+				Content: "Given the following text, provide a short title that summarizes its main topic. If the text is too short or lacks enough information, use the title \"General Conversation\": " + prompt,
+			},
+		},
+	})
+	if err != nil {
+		log.Printf("[GID: %s, threadID: %s] Failed to generate thread title with the error: %v\n", ctx.Interaction.GuildID, threadID, err)
+		return
+	}
+
+	_, err = ctx.Session.ChannelEditComplex(threadID, &discord.ChannelEdit{
+		Name: resp.Choices[0].Message.Content,
+	})
+	if err != nil {
+		log.Printf("[GID: %s, i.ID: %s] Failed to update thread title with the error: %v\n", ctx.Interaction.GuildID, threadID, err)
+	}
 }
 
 func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage, model string) {
