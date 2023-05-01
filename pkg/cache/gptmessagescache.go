@@ -13,6 +13,7 @@ type GPTMessagesCacheData struct {
 	Messages      []openai.ChatCompletionMessage
 	SystemMessage *openai.ChatCompletionMessage
 	GPTModel      string
+	Temperature   *float32
 }
 
 func NewGPTMessagesCache(size int) (*GPTMessagesCache, error) {
