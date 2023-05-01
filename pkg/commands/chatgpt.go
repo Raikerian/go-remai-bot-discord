@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
@@ -198,8 +199,6 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 		return
 	}
 
-	go generateThreadTitleBasedOnInitialPrompt(ctx, params.OpenAIClient, thread.ID, prompt)
-
 	// Lock the thread while we are generating ChatGPT answser
 	utils.ToggleDiscordThreadLock(ctx.Session, thread.ID, true)
 
@@ -232,7 +231,10 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 		return
 	}
 
+	go generateThreadTitleBasedOnInitialPrompt(ctx, params.OpenAIClient, thread.ID, cacheItem.Messages)
+
 	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.GPTModel, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
+
 	err = utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &resp.content, nil)
 	if err != nil {
 		log.Printf("[GID: %s, i.ID: %s] Discord API failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
@@ -521,15 +523,30 @@ func sendChatGPTRequest(client *openai.Client, cacheItem *cache.GPTMessagesCache
 	}, nil
 }
 
-func generateThreadTitleBasedOnInitialPrompt(ctx *Context, client *openai.Client, threadID string, prompt string) {
-	resp, err := client.CreateChatCompletion(context.Background(), openai.ChatCompletionRequest{
-		Model: openai.GPT3Dot5Turbo,
-		Messages: []openai.ChatCompletionMessage{
-			{
-				Role:    openai.ChatMessageRoleUser,
-				Content: "Given the following text, provide a short title that summarizes its main topic. If the text is too short or lacks enough information, use the title \"General Conversation\": " + prompt,
-			},
-		},
+func generateThreadTitleBasedOnInitialPrompt(ctx *Context, client *openai.Client, threadID string, messages []openai.ChatCompletionMessage) {
+	conversation := make([]map[string]string, len(messages))
+	for i, msg := range messages {
+		conversation[i] = map[string]string{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
+	// Combine the conversation messages into a single string
+	var conversationTextBuilder strings.Builder
+	for _, msg := range conversation {
+		conversationTextBuilder.WriteString(fmt.Sprintf("%s: %s\n", msg["role"], msg["content"]))
+	}
+	conversationText := conversationTextBuilder.String()
+
+	// Create a prompt that asks the model to generate a title
+	prompt := fmt.Sprintf("%s\nGenerate a short and concise title summarizing the conversation in the same language. The title must not contain any quotes. The title should be no longer than 60 characters:", conversationText)
+
+	resp, err := client.CreateCompletion(context.Background(), openai.CompletionRequest{
+		Model:       openai.GPT3TextDavinci003,
+		Prompt:      prompt,
+		Temperature: 0.5,
+		MaxTokens:   50,
 	})
 	if err != nil {
 		log.Printf("[GID: %s, threadID: %s] Failed to generate thread title with the error: %v\n", ctx.Interaction.GuildID, threadID, err)
@@ -537,7 +554,7 @@ func generateThreadTitleBasedOnInitialPrompt(ctx *Context, client *openai.Client
 	}
 
 	_, err = ctx.Session.ChannelEditComplex(threadID, &discord.ChannelEdit{
-		Name: resp.Choices[0].Message.Content,
+		Name: resp.Choices[0].Text,
 	})
 	if err != nil {
 		log.Printf("[GID: %s, i.ID: %s] Failed to update thread title with the error: %v\n", ctx.Interaction.GuildID, threadID, err)
