@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
+	"strings"
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
@@ -16,11 +18,12 @@ const (
 
 	chatGPTDefaultModel                            = openai.GPT3Dot5Turbo
 	chatGPTDiscordChannelMessagesRequestMaxRetries = 4
+	chatGPTDiscordMaxMessageLength                 = 2000
 
 	// Discord expects the auto_archive_duration to be one of the following values: 60, 1440, 4320, or 10080,
 	// which represent the number of minutes before a thread is automatically archived
 	// (1 hour, 1 day, 3 days, or 7 days, respectively).
-	ChatGPTDiscordThreadAutoArchivewDurationMinutes = 60
+	chatGPTDiscordThreadAutoArchivewDurationMinutes = 60
 
 	chatGPTPendingMessage = "⌛ Wait a moment, please..."
 	chatGPTEmojiAck       = "⌛"
@@ -40,9 +43,10 @@ type ChatGPTCommandParams struct {
 type ChatGPTCommandOptionType uint8
 
 const (
-	ChatGPTCommandOptionPrompt  ChatGPTCommandOptionType = 1
-	ChatGPTCommandOptionContext ChatGPTCommandOptionType = 2
-	ChatGPTCommandOptionModel   ChatGPTCommandOptionType = 3
+	ChatGPTCommandOptionPrompt      ChatGPTCommandOptionType = 1
+	ChatGPTCommandOptionContext     ChatGPTCommandOptionType = 2
+	ChatGPTCommandOptionModel       ChatGPTCommandOptionType = 3
+	ChatGPTCommandOptionTemperature ChatGPTCommandOptionType = 4
 )
 
 func (t ChatGPTCommandOptionType) String() string {
@@ -53,6 +57,8 @@ func (t ChatGPTCommandOptionType) String() string {
 		return "context"
 	case ChatGPTCommandOptionModel:
 		return "model"
+	case ChatGPTCommandOptionTemperature:
+		return "temperature"
 	}
 	return fmt.Sprintf("ApplicationCommandOptionType(%d)", t)
 }
@@ -65,6 +71,8 @@ func (t ChatGPTCommandOptionType) HumanReadableString() string {
 		return "Context"
 	case ChatGPTCommandOptionModel:
 		return "Model"
+	case ChatGPTCommandOptionTemperature:
+		return "Temperature"
 	}
 	return fmt.Sprintf("ApplicationCommandOptionType(%d)", t)
 }
@@ -101,11 +109,23 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 		Value: prompt,
 	})
 
+	// Prepare cache item
+	cacheItem := &cache.GPTMessagesCacheData{
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleUser,
+				Content: prompt,
+			},
+		},
+	}
+
 	// Set context of the conversation as a system message
-	var context string
 	if option, ok := ctx.Options[ChatGPTCommandOptionContext.String()]; ok {
-		context = option.StringValue()
-		// response += fmt.Sprintf("\nand provided the following context:\n> %s", context)
+		context := option.StringValue()
+		cacheItem.SystemMessage = &openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleSystem,
+			Content: context,
+		}
 		fields = append(fields, &discord.MessageEmbedField{
 			Name:  ChatGPTCommandOptionContext.HumanReadableString(),
 			Value: context,
@@ -118,10 +138,21 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 		model = option.StringValue()
 		log.Printf("[GID: %s, i.ID: %s] Model provided: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, model)
 	}
+	cacheItem.GPTModel = model
 	fields = append(fields, &discord.MessageEmbedField{
 		Name:  ChatGPTCommandOptionModel.HumanReadableString(),
 		Value: model,
 	})
+
+	if option, ok := ctx.Options[ChatGPTCommandOptionTemperature.String()]; ok {
+		temp := float32(option.FloatValue())
+		cacheItem.Temperature = &temp
+		fields = append(fields, &discord.MessageEmbedField{
+			Name:  ChatGPTCommandOptionTemperature.HumanReadableString(),
+			Value: fmt.Sprintf("%g", temp),
+		})
+		log.Printf("[GID: %s, i.ID: %s] Temperature provided: %g\n", ctx.Interaction.GuildID, ctx.Interaction.ID, temp)
+	}
 
 	// Respond to interaction with a reference and user ping
 	err = ctx.Respond(&discord.InteractionResponse{
@@ -158,8 +189,8 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 	}
 
 	thread, err := ctx.Session.MessageThreadStartComplex(m.ChannelID, m.ID, &discord.ThreadStart{
-		Name:                model + " conversation with " + ctx.Interaction.Member.User.Username,
-		AutoArchiveDuration: ChatGPTDiscordThreadAutoArchivewDurationMinutes,
+		Name:                "New chat",
+		AutoArchiveDuration: chatGPTDiscordThreadAutoArchivewDurationMinutes,
 		Invitable:           false,
 	})
 
@@ -183,23 +214,7 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 		return
 	}
 
-	// Set context of the conversation as a system message
-	cacheItem := &cache.GPTMessagesCacheData{
-		Messages: []openai.ChatCompletionMessage{
-			{
-				Role:    openai.ChatMessageRoleUser,
-				Content: prompt,
-			},
-		},
-		GPTModel: model,
-	}
 	params.MessagesCache.Add(thread.ID, cacheItem)
-	if context != "" {
-		cacheItem.SystemMessage = &openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: context,
-		}
-	}
 
 	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.GPTModel, len(cacheItem.Messages))
 	resp, err := sendChatGPTRequest(params.OpenAIClient, cacheItem)
@@ -217,8 +232,12 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 		return
 	}
 
+	go generateThreadTitleBasedOnInitialPrompt(ctx, params.OpenAIClient, thread.ID, cacheItem.Messages)
+
 	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.GPTModel, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
-	err = utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &resp.content, nil)
+
+	messages := splitMessage(resp.content)
+	err = utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &messages[0], nil)
 	if err != nil {
 		log.Printf("[GID: %s, i.ID: %s] Discord API failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
 		emptyString := ""
@@ -230,6 +249,16 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 			},
 		})
 		return
+	}
+
+	if len(messages) > 1 {
+		// if there are more messages, send them as a thread reply
+		for _, message := range messages[1:] {
+			channelMessage, err = utils.DiscordChannelMessageSend(ctx.Session, thread.ID, message, nil)
+			if err != nil {
+				log.Printf("[GID: %s, i.ID: %s] Discord API failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
+			}
+		}
 	}
 
 	attachUsageInfo(ctx.Session, channelMessage, resp.usage, cacheItem.GPTModel)
@@ -316,7 +345,7 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 					}
 					role = openai.ChatMessageRoleUser
 
-					prompt, context, model := parseInteractionReply(value.ReferencedMessage)
+					prompt, context, model, temperature := parseInteractionReply(value.ReferencedMessage)
 					if prompt == "" {
 						isGPTThread = false
 						break
@@ -331,6 +360,9 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 					}
 					if model == "" {
 						model = chatGPTDefaultModel
+					}
+					if temperature != nil {
+						cacheItem.Temperature = temperature
 					}
 
 					cacheItem.SystemMessage = systemMessage
@@ -407,16 +439,20 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 
 	log.Printf("[GID: %s, CHID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Message.GuildID, ctx.Message.ChannelID, cacheItem.GPTModel, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
 
-	replyMessage, err := ctx.Reply(resp.content)
-	if err != nil {
-		log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to reply in the thread with the error: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, err)
-		ctx.AddReaction(chatGPTEmojiErr)
-		ctx.EmbedReply(&discord.MessageEmbed{
-			Title:       "❌ Discord API Error",
-			Description: err.Error(),
-			Color:       0xff0000,
-		})
-		return true
+	messages := splitMessage(resp.content)
+	var replyMessage *discord.Message
+	for _, message := range messages {
+		replyMessage, err = ctx.Reply(message)
+		if err != nil {
+			log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to reply in the thread with the error: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, err)
+			ctx.AddReaction(chatGPTEmojiErr)
+			ctx.EmbedReply(&discord.MessageEmbed{
+				Title:       "❌ Discord API Error",
+				Description: err.Error(),
+				Color:       0xff0000,
+			})
+			return true
+		}
 	}
 
 	attachUsageInfo(ctx.Session, replyMessage, resp.usage, cacheItem.GPTModel)
@@ -428,7 +464,7 @@ func shouldHandleMessageType(t discord.MessageType) (ok bool) {
 	return t == discord.MessageTypeDefault || t == discord.MessageTypeReply
 }
 
-func parseInteractionReply(discordMessage *discord.Message) (prompt string, context string, model string) {
+func parseInteractionReply(discordMessage *discord.Message) (prompt string, context string, model string, temperature *float32) {
 	if discordMessage.Embeds == nil || len(discordMessage.Embeds) == 0 {
 		return
 	}
@@ -441,6 +477,14 @@ func parseInteractionReply(discordMessage *discord.Message) (prompt string, cont
 			context = value.Value
 		case ChatGPTCommandOptionModel.HumanReadableString():
 			model = value.Value
+		case ChatGPTCommandOptionTemperature.HumanReadableString():
+			parsedValue, err := strconv.ParseFloat(value.Value, 32)
+			if err != nil {
+				log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to parse temperature value from the message with the error: %v\n", discordMessage.GuildID, discordMessage.ChannelID, discordMessage.ID, err)
+				continue
+			}
+			temp := float32(parsedValue)
+			temperature = &temp
 		}
 	}
 
@@ -466,12 +510,18 @@ func sendChatGPTRequest(client *openai.Client, cacheItem *cache.GPTMessagesCache
 		messages = append([]openai.ChatCompletionMessage{*cacheItem.SystemMessage}, messages...)
 	}
 
+	req := openai.ChatCompletionRequest{
+		Model:    cacheItem.GPTModel,
+		Messages: messages,
+	}
+
+	if cacheItem.Temperature != nil {
+		req.Temperature = *cacheItem.Temperature
+	}
+
 	resp, err := client.CreateChatCompletion(
 		context.Background(),
-		openai.ChatCompletionRequest{
-			Model:    cacheItem.GPTModel,
-			Messages: messages,
-		},
+		req,
 	)
 	if err != nil {
 		return nil, err
@@ -487,6 +537,70 @@ func sendChatGPTRequest(client *openai.Client, cacheItem *cache.GPTMessagesCache
 		content: responseContent,
 		usage:   resp.Usage,
 	}, nil
+}
+
+func generateThreadTitleBasedOnInitialPrompt(ctx *Context, client *openai.Client, threadID string, messages []openai.ChatCompletionMessage) {
+	conversation := make([]map[string]string, len(messages))
+	for i, msg := range messages {
+		conversation[i] = map[string]string{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
+	// Combine the conversation messages into a single string
+	var conversationTextBuilder strings.Builder
+	for _, msg := range conversation {
+		conversationTextBuilder.WriteString(fmt.Sprintf("%s: %s\n", msg["role"], msg["content"]))
+	}
+	conversationText := conversationTextBuilder.String()
+
+	// Create a prompt that asks the model to generate a title
+	prompt := fmt.Sprintf("%s\nGenerate a short and concise title summarizing the conversation in the same language. The title must not contain any quotes. The title should be no longer than 60 characters:", conversationText)
+
+	resp, err := client.CreateCompletion(context.Background(), openai.CompletionRequest{
+		Model:       openai.GPT3TextDavinci003,
+		Prompt:      prompt,
+		Temperature: 0.5,
+		MaxTokens:   75,
+	})
+	if err != nil {
+		log.Printf("[GID: %s, threadID: %s] Failed to generate thread title with the error: %v\n", ctx.Interaction.GuildID, threadID, err)
+		return
+	}
+
+	_, err = ctx.Session.ChannelEditComplex(threadID, &discord.ChannelEdit{
+		Name: resp.Choices[0].Text,
+	})
+	if err != nil {
+		log.Printf("[GID: %s, i.ID: %s] Failed to update thread title with the error: %v\n", ctx.Interaction.GuildID, threadID, err)
+	}
+}
+
+func splitMessage(message string) []string {
+	if len(message) <= chatGPTDiscordMaxMessageLength {
+		// the message is short enough to be sent as is
+		return []string{message}
+	}
+
+	// split the message by whitespace
+	words := strings.Fields(message)
+	var messageParts []string
+	currentMessage := ""
+	for _, word := range words {
+		if len(currentMessage)+len(word)+1 > chatGPTDiscordMaxMessageLength {
+			// start a new message if adding the current word exceeds the maximum length
+			messageParts = append(messageParts, currentMessage)
+			currentMessage = word + " "
+		} else {
+			// add the current word to the current message
+			currentMessage += word + " "
+		}
+	}
+	// add the last message to the list of message parts
+	messageParts = append(messageParts, currentMessage)
+
+	return messageParts
 }
 
 func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage, model string) {
@@ -507,6 +621,7 @@ func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage,
 }
 
 func ChatGPTCommand(params *ChatGPTCommandParams) *Command {
+	temperatureOptionMinValue := 0.0
 	return &Command{
 		Name:                     chatGPTCommandName,
 		Description:              "Start conversation with ChatGPT",
@@ -540,6 +655,14 @@ func ChatGPTCommand(params *ChatGPTCommandParams) *Command {
 						Value: openai.GPT4,
 					},
 				},
+			},
+			{
+				Type:        discord.ApplicationCommandOptionNumber,
+				Name:        ChatGPTCommandOptionTemperature.String(),
+				Description: "What sampling temperature to use, between 0.0 and 2.0. Lower - more focused and deterministic",
+				MinValue:    &temperatureOptionMinValue,
+				MaxValue:    2.0,
+				Required:    false,
 			},
 		},
 		Handler: HandlerFunc(func(ctx *Context) {
