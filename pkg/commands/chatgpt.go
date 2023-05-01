@@ -18,11 +18,12 @@ const (
 
 	chatGPTDefaultModel                            = openai.GPT3Dot5Turbo
 	chatGPTDiscordChannelMessagesRequestMaxRetries = 4
+	chatGPTDiscordMaxMessageLength                 = 2000
 
 	// Discord expects the auto_archive_duration to be one of the following values: 60, 1440, 4320, or 10080,
 	// which represent the number of minutes before a thread is automatically archived
 	// (1 hour, 1 day, 3 days, or 7 days, respectively).
-	ChatGPTDiscordThreadAutoArchivewDurationMinutes = 60
+	chatGPTDiscordThreadAutoArchivewDurationMinutes = 60
 
 	chatGPTPendingMessage = "⌛ Wait a moment, please..."
 	chatGPTEmojiAck       = "⌛"
@@ -189,7 +190,7 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 
 	thread, err := ctx.Session.MessageThreadStartComplex(m.ChannelID, m.ID, &discord.ThreadStart{
 		Name:                "New chat",
-		AutoArchiveDuration: ChatGPTDiscordThreadAutoArchivewDurationMinutes,
+		AutoArchiveDuration: chatGPTDiscordThreadAutoArchivewDurationMinutes,
 		Invitable:           false,
 	})
 
@@ -235,7 +236,8 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 
 	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.GPTModel, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
 
-	err = utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &resp.content, nil)
+	messages := splitMessage(resp.content)
+	err = utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &messages[0], nil)
 	if err != nil {
 		log.Printf("[GID: %s, i.ID: %s] Discord API failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
 		emptyString := ""
@@ -247,6 +249,16 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 			},
 		})
 		return
+	}
+
+	if len(messages) > 1 {
+		// if there are more messages, send them as a thread reply
+		for _, message := range messages[1:] {
+			channelMessage, err = utils.DiscordChannelMessageSend(ctx.Session, thread.ID, message, nil)
+			if err != nil {
+				log.Printf("[GID: %s, i.ID: %s] Discord API failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
+			}
+		}
 	}
 
 	attachUsageInfo(ctx.Session, channelMessage, resp.usage, cacheItem.GPTModel)
@@ -427,16 +439,20 @@ func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (h
 
 	log.Printf("[GID: %s, CHID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Message.GuildID, ctx.Message.ChannelID, cacheItem.GPTModel, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
 
-	replyMessage, err := ctx.Reply(resp.content)
-	if err != nil {
-		log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to reply in the thread with the error: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, err)
-		ctx.AddReaction(chatGPTEmojiErr)
-		ctx.EmbedReply(&discord.MessageEmbed{
-			Title:       "❌ Discord API Error",
-			Description: err.Error(),
-			Color:       0xff0000,
-		})
-		return true
+	messages := splitMessage(resp.content)
+	var replyMessage *discord.Message
+	for _, message := range messages {
+		replyMessage, err = ctx.Reply(message)
+		if err != nil {
+			log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to reply in the thread with the error: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, err)
+			ctx.AddReaction(chatGPTEmojiErr)
+			ctx.EmbedReply(&discord.MessageEmbed{
+				Title:       "❌ Discord API Error",
+				Description: err.Error(),
+				Color:       0xff0000,
+			})
+			return true
+		}
 	}
 
 	attachUsageInfo(ctx.Session, replyMessage, resp.usage, cacheItem.GPTModel)
@@ -561,6 +577,32 @@ func generateThreadTitleBasedOnInitialPrompt(ctx *Context, client *openai.Client
 	}
 }
 
+func splitMessage(message string) []string {
+	if len(message) <= chatGPTDiscordMaxMessageLength {
+		// the message is short enough to be sent as is
+		return []string{message}
+	}
+
+	// split the message by whitespace
+	words := strings.Fields(message)
+	var messageParts []string
+	currentMessage := ""
+	for _, word := range words {
+		if len(currentMessage)+len(word)+1 > chatGPTDiscordMaxMessageLength {
+			// start a new message if adding the current word exceeds the maximum length
+			messageParts = append(messageParts, currentMessage)
+			currentMessage = word + " "
+		} else {
+			// add the current word to the current message
+			currentMessage += word + " "
+		}
+	}
+	// add the last message to the list of message parts
+	messageParts = append(messageParts, currentMessage)
+
+	return messageParts
+}
+
 func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage, model string) {
 	extraInfo := fmt.Sprintf("Completion Tokens: %d, Total: %d", usage.CompletionTokens, usage.TotalTokens)
 	if model == openai.GPT3Dot5Turbo {
@@ -617,7 +659,7 @@ func ChatGPTCommand(params *ChatGPTCommandParams) *Command {
 			{
 				Type:        discord.ApplicationCommandOptionNumber,
 				Name:        ChatGPTCommandOptionTemperature.String(),
-				Description: "What sampling temperature to use, between 0 and 2. Lower - more focused and deterministic",
+				Description: "What sampling temperature to use, between 0.0 and 2.0. Lower - more focused and deterministic",
 				MinValue:    &temperatureOptionMinValue,
 				MaxValue:    2.0,
 				Required:    false,
