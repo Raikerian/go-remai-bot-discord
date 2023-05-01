@@ -1,7 +1,7 @@
 package constants
 
 const (
-	Version = "0.3.2"
+	Version = "0.4.0"
 
 	DiscordThreadsCacheSize = 32
 )
