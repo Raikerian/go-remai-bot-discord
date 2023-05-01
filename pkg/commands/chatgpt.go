@@ -562,7 +562,7 @@ func generateThreadTitleBasedOnInitialPrompt(ctx *Context, client *openai.Client
 		Model:       openai.GPT3TextDavinci003,
 		Prompt:      prompt,
 		Temperature: 0.5,
-		MaxTokens:   50,
+		MaxTokens:   75,
 	})
 	if err != nil {
 		log.Printf("[GID: %s, threadID: %s] Failed to generate thread title with the error: %v\n", ctx.Interaction.GuildID, threadID, err)
