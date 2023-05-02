@@ -8,6 +8,7 @@ import (
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
 	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
 	"github.com/raikerian/go-remai-bot-discord/pkg/commands"
+	"github.com/raikerian/go-remai-bot-discord/pkg/commands/chat"
 	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 	"github.com/sashabaranov/go-openai"
 	"gopkg.in/yaml.v2"
@@ -45,7 +46,7 @@ var (
 	openaiClient *openai.Client
 
 	gptMessagesCache      *cache.GPTMessagesCache
-	ignoredChannelsCache  = make(commands.IgnoredChannelsCache)
+	ignoredChannelsCache  = make(chat.IgnoredChannelsCache)
 	imageUploadHTTPClient *http.Client
 )
 
@@ -73,9 +74,9 @@ func main() {
 	if config.OpenAIAPIKey != "" {
 		openaiClient = openai.NewClient(config.OpenAIAPIKey) // initialize OpenAI client first
 
-		discordBot.Router.Register(commands.ChatGPTCommand(&commands.ChatGPTCommandParams{
+		discordBot.Router.Register(chat.Command(&chat.CommandParams{
 			OpenAIClient:         openaiClient,
-			MessagesCache:        gptMessagesCache,
+			GPTMessagesCache:     gptMessagesCache,
 			IgnoredChannelsCache: &ignoredChannelsCache,
 		}))
 
