@@ -19,7 +19,6 @@ const (
 
 	gptDefaultModel                            = openai.GPT3Dot5Turbo
 	gptDiscordChannelMessagesRequestMaxRetries = 4
-	gptDiscordMaxMessageLength                 = 2000
 
 	// Discord expects the auto_archive_duration to be one of the following values: 60, 1440, 4320, or 10080,
 	// which represent the number of minutes before a thread is automatically archived
@@ -154,7 +153,7 @@ func chatGPTHandler(ctx *bot.Context, params *CommandParams) {
 			Content: fmt.Sprintf("<@%s>", ctx.Interaction.Member.User.ID),
 			Embeds: []*discord.MessageEmbed{
 				{
-					Title:  "ChatGPT request by " + ctx.Interaction.Member.User.Username + "#" + ctx.Interaction.Member.User.Discriminator,
+					Title:  "OpenAI GPT request by " + ctx.Interaction.Member.User.Username + "#" + ctx.Interaction.Member.User.Discriminator,
 					Fields: fields,
 				},
 			},
@@ -449,8 +448,6 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) {
 	}
 
 	attachUsageInfo(ctx.Session, replyMessage, resp.usage, cacheItem.GPTModel)
-
-	return
 }
 
 func shouldHandleMessageType(t discord.MessageType) (ok bool) {
@@ -482,13 +479,6 @@ func parseInteractionReply(discordMessage *discord.Message) (prompt string, cont
 	}
 
 	return
-}
-
-func reverseMessages(messages *[]openai.ChatCompletionMessage) {
-	length := len(*messages)
-	for i := 0; i < length/2; i++ {
-		(*messages)[i], (*messages)[length-i-1] = (*messages)[length-i-1], (*messages)[i]
-	}
 }
 
 type chatGPTResponse struct {
@@ -568,32 +558,6 @@ func generateThreadTitleBasedOnInitialPrompt(ctx *bot.Context, client *openai.Cl
 	if err != nil {
 		log.Printf("[GID: %s, i.ID: %s] Failed to update thread title with the error: %v\n", ctx.Interaction.GuildID, threadID, err)
 	}
-}
-
-func splitMessage(message string) []string {
-	if len(message) <= gptDiscordMaxMessageLength {
-		// the message is short enough to be sent as is
-		return []string{message}
-	}
-
-	// split the message by whitespace
-	words := strings.Fields(message)
-	var messageParts []string
-	currentMessage := ""
-	for _, word := range words {
-		if len(currentMessage)+len(word)+1 > gptDiscordMaxMessageLength {
-			// start a new message if adding the current word exceeds the maximum length
-			messageParts = append(messageParts, currentMessage)
-			currentMessage = word + " "
-		} else {
-			// add the current word to the current message
-			currentMessage += word + " "
-		}
-	}
-	// add the last message to the list of message parts
-	messageParts = append(messageParts, currentMessage)
-
-	return messageParts
 }
 
 func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage, model string) {
