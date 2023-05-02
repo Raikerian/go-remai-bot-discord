@@ -5,21 +5,20 @@ import (
 	"log"
 
 	discord "github.com/bwmarrin/discordgo"
-	"github.com/raikerian/go-remai-bot-discord/pkg/commands"
 )
 
 type Router struct {
-	commands           map[string]*commands.Command
+	commands           map[string]*Command
 	registeredCommands []*discord.ApplicationCommand
 }
 
 func NewRouter() *Router {
 	return &Router{
-		commands: make(map[string]*commands.Command),
+		commands: make(map[string]*Command),
 	}
 }
 
-func (r *Router) Register(cmd *commands.Command) {
+func (r *Router) Register(cmd *Command) {
 	if _, ok := r.commands[cmd.Name]; !ok {
 		r.commands[cmd.Name] = cmd
 	}
@@ -36,14 +35,14 @@ func (r *Router) HandleInteraction(s *discord.Session, i *discord.InteractionCre
 		return
 	}
 
-	ctx := commands.NewContext(s, cmd, i.Interaction, append(cmd.Middlewares, cmd.Handler))
+	ctx := NewContext(s, cmd, i.Interaction, append(cmd.Middlewares, cmd.Handler))
 	ctx.Next()
 }
 
 func (r *Router) HandleMessage(s *discord.Session, m *discord.MessageCreate) {
 	for _, cmd := range r.commands {
 		if cmd.MessageHandler != nil {
-			ctx := commands.NewMessageContext(s, cmd, m.Message, cmd.MessageMiddlewares)
+			ctx := NewMessageContext(s, cmd, m.Message, cmd.MessageMiddlewares)
 
 			hit := cmd.MessageHandler.HandleMessageCommand(ctx)
 			if !hit {

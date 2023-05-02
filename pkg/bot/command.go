@@ -1,4 +1,4 @@
-package commands
+package bot
 
 import discord "github.com/bwmarrin/discordgo"
 
@@ -30,6 +30,8 @@ type Command struct {
 
 	MessageHandler     MessageHandler
 	MessageMiddlewares []MessageHandler
+
+	SubCommands *Router
 }
 
 func (cmd Command) ApplicationCommand() *discord.ApplicationCommand {

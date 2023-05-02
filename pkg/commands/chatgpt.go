@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	discord "github.com/bwmarrin/discordgo"
+	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
 	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
 	"github.com/raikerian/go-remai-bot-discord/pkg/utils"
 	"github.com/sashabaranov/go-openai"
@@ -77,7 +78,7 @@ func (t ChatGPTCommandOptionType) HumanReadableString() string {
 	return fmt.Sprintf("ApplicationCommandOptionType(%d)", t)
 }
 
-func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
+func chatGPTHandler(ctx *bot.Context, params *ChatGPTCommandParams) {
 	ch, err := ctx.Session.State.Channel(ctx.Interaction.ChannelID)
 	if err == nil && ch.IsThread() {
 		// ignore interactions invoked in threads
@@ -264,7 +265,7 @@ func chatGPTHandler(ctx *Context, params *ChatGPTCommandParams) {
 	attachUsageInfo(ctx.Session, channelMessage, resp.usage, cacheItem.GPTModel)
 }
 
-func chatGPTMessageHandler(ctx *MessageContext, params *ChatGPTCommandParams) (hit bool) {
+func chatGPTMessageHandler(ctx *bot.MessageContext, params *ChatGPTCommandParams) (hit bool) {
 	if !shouldHandleMessageType(ctx.Message.Type) {
 		// ignore message types that should not be handled by this command
 		return false
@@ -539,7 +540,7 @@ func sendChatGPTRequest(client *openai.Client, cacheItem *cache.GPTMessagesCache
 	}, nil
 }
 
-func generateThreadTitleBasedOnInitialPrompt(ctx *Context, client *openai.Client, threadID string, messages []openai.ChatCompletionMessage) {
+func generateThreadTitleBasedOnInitialPrompt(ctx *bot.Context, client *openai.Client, threadID string, messages []openai.ChatCompletionMessage) {
 	conversation := make([]map[string]string, len(messages))
 	for i, msg := range messages {
 		conversation[i] = map[string]string{
@@ -620,9 +621,9 @@ func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage,
 	})
 }
 
-func ChatGPTCommand(params *ChatGPTCommandParams) *Command {
+func ChatGPTCommand(params *ChatGPTCommandParams) *bot.Command {
 	temperatureOptionMinValue := 0.0
-	return &Command{
+	return &bot.Command{
 		Name:                     chatGPTCommandName,
 		Description:              "Start conversation with ChatGPT",
 		DMPermission:             false,
@@ -665,10 +666,10 @@ func ChatGPTCommand(params *ChatGPTCommandParams) *Command {
 				Required:    false,
 			},
 		},
-		Handler: HandlerFunc(func(ctx *Context) {
+		Handler: bot.HandlerFunc(func(ctx *bot.Context) {
 			chatGPTHandler(ctx, params)
 		}),
-		MessageHandler: MessageHandlerFunc(func(ctx *MessageContext) bool {
+		MessageHandler: bot.MessageHandlerFunc(func(ctx *bot.MessageContext) bool {
 			return chatGPTMessageHandler(ctx, params)
 		}),
 	}
