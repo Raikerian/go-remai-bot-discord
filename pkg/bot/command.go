@@ -13,12 +13,12 @@ type HandlerFunc func(ctx *Context)
 func (f HandlerFunc) HandleCommand(ctx *Context) { f(ctx) }
 
 type MessageHandler interface {
-	HandleMessageCommand(ctx *MessageContext) bool
+	HandleMessageCommand(ctx *MessageContext)
 }
 
-type MessageHandlerFunc func(ctx *MessageContext) bool
+type MessageHandlerFunc func(ctx *MessageContext)
 
-func (f MessageHandlerFunc) HandleMessageCommand(ctx *MessageContext) bool { return f(ctx) }
+func (f MessageHandlerFunc) HandleMessageCommand(ctx *MessageContext) { f(ctx) }
 
 type Command struct {
 	Name                     string

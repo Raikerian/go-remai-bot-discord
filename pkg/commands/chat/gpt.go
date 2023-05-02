@@ -257,43 +257,43 @@ func chatGPTHandler(ctx *bot.Context, params *CommandParams) {
 	attachUsageInfo(ctx.Session, channelMessage, resp.usage, cacheItem.GPTModel)
 }
 
-func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) bool {
+func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) {
 	if !shouldHandleMessageType(ctx.Message.Type) {
 		// ignore message types that should not be handled by this command
-		return false
+		return
 	}
 
 	if ctx.Session.State.User.ID == ctx.Message.Author.ID {
 		// ignore self messages
-		return false
+		return
 	}
 
 	if _, exists := (*params.IgnoredChannelsCache)[ctx.Message.ChannelID]; exists {
 		// skip over ignored channels list
-		return false
+		return
 	}
 
 	if ctx.Message.Content == "" {
 		// ignore messages with empty content
-		return false
+		return
 	}
 
 	ch, err := ctx.Session.State.Channel(ctx.Message.ChannelID)
 	if err != nil {
 		log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to get channel info with the error: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, err)
-		return false
+		return
 	}
 
 	if !ch.IsThread() {
 		// ignore non threads
 		(*params.IgnoredChannelsCache)[ctx.Message.ChannelID] = struct{}{}
-		return false
+		return
 	}
 
 	if ch.ThreadMetadata != nil && (ch.ThreadMetadata.Locked || ch.ThreadMetadata.Archived) {
 		// We don't want to handle messages in locked or archived threads
 		log.Printf("[GID: %s, CHID: %s, MID: %s] Ignoring new message in a potential thread as it is locked or/and archived\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID)
-		return false
+		return
 	}
 
 	log.Printf("[GID: %s, CHID: %s, MID: %s] Handling new message in a potential GPT thread\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID)
@@ -388,7 +388,7 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) bool 
 		if retries >= gptDiscordChannelMessagesRequestMaxRetries {
 			// max retries reached on fetching messages
 			log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to get channel messages. Reached max retries\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID)
-			return false
+			return
 		}
 
 		if !isGPTThread {
@@ -396,7 +396,7 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) bool 
 			log.Printf("[GID: %s, CHID: %s, MID: %s] Not a GPT thread, saving to ignored cache to skip over it later\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID)
 			// save threadID to ignored cache, so we can always ignore it later
 			(*params.IgnoredChannelsCache)[ctx.Message.ChannelID] = struct{}{}
-			return false
+			return
 		}
 
 		params.GPTMessagesCache.Add(ctx.Message.ChannelID, cacheItem)
@@ -427,7 +427,7 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) bool 
 			Description: err.Error(),
 			Color:       0xff0000,
 		})
-		return true
+		return
 	}
 
 	log.Printf("[GID: %s, CHID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Message.GuildID, ctx.Message.ChannelID, cacheItem.GPTModel, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
@@ -444,13 +444,13 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) bool 
 				Description: err.Error(),
 				Color:       0xff0000,
 			})
-			return true
+			return
 		}
 	}
 
 	attachUsageInfo(ctx.Session, replyMessage, resp.usage, cacheItem.GPTModel)
 
-	return true
+	return
 }
 
 func shouldHandleMessageType(t discord.MessageType) (ok bool) {
@@ -659,8 +659,8 @@ func gptCommand(params *CommandParams) *bot.Command {
 		Handler: bot.HandlerFunc(func(ctx *bot.Context) {
 			chatGPTHandler(ctx, params)
 		}),
-		MessageHandler: bot.MessageHandlerFunc(func(ctx *bot.MessageContext) bool {
-			return chatGPTMessageHandler(ctx, params)
+		MessageHandler: bot.MessageHandlerFunc(func(ctx *bot.MessageContext) {
+			chatGPTMessageHandler(ctx, params)
 		}),
 	}
 }
