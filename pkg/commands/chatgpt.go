@@ -624,53 +624,60 @@ func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage,
 func ChatGPTCommand(params *ChatGPTCommandParams) *bot.Command {
 	temperatureOptionMinValue := 0.0
 	return &bot.Command{
-		Name:                     chatGPTCommandName,
-		Description:              "Start conversation with ChatGPT",
+		Name:                     "chat", //chatGPTCommandName,
+		Description:              "LLM",  //"Start conversation with ChatGPT",
 		DMPermission:             false,
 		DefaultMemberPermissions: discord.PermissionViewChannel,
-		Options: []*discord.ApplicationCommandOption{
+		Type:                     discord.ChatApplicationCommand,
+		SubCommands: bot.NewRouter([]*bot.Command{
 			{
-				Type:        discord.ApplicationCommandOptionString,
-				Name:        ChatGPTCommandOptionPrompt.String(),
-				Description: "ChatGPT prompt",
-				Required:    true,
-			},
-			{
-				Type:        discord.ApplicationCommandOptionString,
-				Name:        ChatGPTCommandOptionContext.String(),
-				Description: "Sets context that guides the AI assistant's behavior during the conversation",
-				Required:    false,
-			},
-			{
-				Type:        discord.ApplicationCommandOptionString,
-				Name:        ChatGPTCommandOptionModel.String(),
-				Description: "GPT model",
-				Required:    false,
-				Choices: []*discord.ApplicationCommandOptionChoice{
+				Name:        "gpt",
+				Description: "Start conversation with ChatGPT",
+				Options: []*discord.ApplicationCommandOption{
 					{
-						Name:  "GPT-3.5-Turbo (Default)",
-						Value: openai.GPT3Dot5Turbo,
+						Type:        discord.ApplicationCommandOptionString,
+						Name:        ChatGPTCommandOptionPrompt.String(),
+						Description: "ChatGPT prompt",
+						Required:    true,
 					},
 					{
-						Name:  "GPT-4",
-						Value: openai.GPT4,
+						Type:        discord.ApplicationCommandOptionString,
+						Name:        ChatGPTCommandOptionContext.String(),
+						Description: "Sets context that guides the AI assistant's behavior during the conversation",
+						Required:    false,
+					},
+					{
+						Type:        discord.ApplicationCommandOptionString,
+						Name:        ChatGPTCommandOptionModel.String(),
+						Description: "GPT model",
+						Required:    false,
+						Choices: []*discord.ApplicationCommandOptionChoice{
+							{
+								Name:  "GPT-3.5-Turbo (Default)",
+								Value: openai.GPT3Dot5Turbo,
+							},
+							{
+								Name:  "GPT-4",
+								Value: openai.GPT4,
+							},
+						},
+					},
+					{
+						Type:        discord.ApplicationCommandOptionNumber,
+						Name:        ChatGPTCommandOptionTemperature.String(),
+						Description: "What sampling temperature to use, between 0.0 and 2.0. Lower - more focused and deterministic",
+						MinValue:    &temperatureOptionMinValue,
+						MaxValue:    2.0,
+						Required:    false,
 					},
 				},
+				Handler: bot.HandlerFunc(func(ctx *bot.Context) {
+					chatGPTHandler(ctx, params)
+				}),
+				MessageHandler: bot.MessageHandlerFunc(func(ctx *bot.MessageContext) bool {
+					return chatGPTMessageHandler(ctx, params)
+				}),
 			},
-			{
-				Type:        discord.ApplicationCommandOptionNumber,
-				Name:        ChatGPTCommandOptionTemperature.String(),
-				Description: "What sampling temperature to use, between 0.0 and 2.0. Lower - more focused and deterministic",
-				MinValue:    &temperatureOptionMinValue,
-				MaxValue:    2.0,
-				Required:    false,
-			},
-		},
-		Handler: bot.HandlerFunc(func(ctx *bot.Context) {
-			chatGPTHandler(ctx, params)
-		}),
-		MessageHandler: bot.MessageHandlerFunc(func(ctx *bot.MessageContext) bool {
-			return chatGPTMessageHandler(ctx, params)
 		}),
 	}
 }

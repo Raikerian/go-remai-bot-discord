@@ -22,7 +22,7 @@ func NewBot(token string) (*Bot, error) {
 	}
 	return &Bot{
 		Session: session,
-		Router:  NewRouter(),
+		Router:  NewRouter(nil),
 	}, nil
 }
 
