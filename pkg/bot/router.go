@@ -69,6 +69,22 @@ func (r *Router) getSubcommand(cmd *Command, opt *discord.ApplicationCommandInte
 	return cmd, nil, append(parent, cmd.Handler)
 }
 
+func (r *Router) getMessageHandlers(cmd *Command) []MessageHandler {
+	var handlers []MessageHandler
+
+	if cmd.MessageHandler != nil {
+		handlers = append(handlers, cmd.MessageHandler)
+	}
+
+	if cmd.SubCommands != nil {
+		for _, cmd := range cmd.SubCommands.List() {
+			handlers = append(handlers, r.getMessageHandlers(cmd)...)
+		}
+	}
+
+	return handlers
+}
+
 func (r *Router) HandleInteraction(s *discord.Session, i *discord.InteractionCreate) {
 	if i.Type != discord.InteractionApplicationCommand {
 		return
@@ -94,14 +110,9 @@ func (r *Router) HandleInteraction(s *discord.Session, i *discord.InteractionCre
 
 func (r *Router) HandleMessage(s *discord.Session, m *discord.MessageCreate) {
 	for _, cmd := range r.commands {
-		if cmd.MessageHandler != nil {
-			ctx := NewMessageContext(s, cmd, m.Message, cmd.MessageMiddlewares)
-
-			hit := cmd.MessageHandler.HandleMessageCommand(ctx)
-			if !hit {
-				continue
-			}
-
+		handlers := r.getMessageHandlers(cmd)
+		if len(handlers) > 0 {
+			ctx := NewMessageContext(s, cmd, m.Message, handlers)
 			ctx.Next()
 		}
 	}

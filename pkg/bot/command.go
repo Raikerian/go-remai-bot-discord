@@ -28,11 +28,9 @@ type Command struct {
 	Options                  []*discord.ApplicationCommandOption
 	Type                     discord.ApplicationCommandType
 
-	Handler     Handler
-	Middlewares []Handler
-
-	MessageHandler     MessageHandler
-	MessageMiddlewares []MessageHandler
+	Handler        Handler
+	Middlewares    []Handler
+	MessageHandler MessageHandler
 
 	SubCommands *Router
 }

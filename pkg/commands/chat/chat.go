@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	chatCommandName = "chatgpt"
+	chatCommandName = "chat"
 )
 
 type IgnoredChannelsCache map[string]struct{}

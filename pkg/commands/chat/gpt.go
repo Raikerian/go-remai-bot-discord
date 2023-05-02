@@ -257,7 +257,7 @@ func chatGPTHandler(ctx *bot.Context, params *CommandParams) {
 	attachUsageInfo(ctx.Session, channelMessage, resp.usage, cacheItem.GPTModel)
 }
 
-func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) (hit bool) {
+func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) bool {
 	if !shouldHandleMessageType(ctx.Message.Type) {
 		// ignore message types that should not be handled by this command
 		return false
