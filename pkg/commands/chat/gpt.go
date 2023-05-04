@@ -195,9 +195,6 @@ func chatGPTHandler(ctx *bot.Context, params *CommandParams) {
 	// Lock the thread while we are generating ChatGPT answser
 	utils.ToggleDiscordThreadLock(ctx.Session, thread.ID, true)
 
-	// Unlock the thread at the end
-	defer utils.ToggleDiscordThreadLock(ctx.Session, thread.ID, false)
-
 	channelMessage, err := utils.DiscordChannelMessageSend(ctx.Session, thread.ID, gptPendingMessage, nil)
 	if err != nil {
 		// Without reply  we cannot edit message with the response of ChatGPT
@@ -223,6 +220,9 @@ func chatGPTHandler(ctx *bot.Context, params *CommandParams) {
 		})
 		return
 	}
+
+	// Unlock the thread at the end
+	defer utils.ToggleDiscordThreadLock(ctx.Session, thread.ID, false)
 
 	go generateThreadTitleBasedOnInitialPrompt(ctx, params.OpenAIClient, thread.ID, cacheItem.Messages)
 
