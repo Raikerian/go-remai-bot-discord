@@ -17,7 +17,6 @@ import (
 const (
 	gptCommandName = "gpt"
 
-	gptDefaultModel                            = openai.GPT3Dot5Turbo
 	gptDiscordChannelMessagesRequestMaxRetries = 4
 
 	// Discord expects the auto_archive_duration to be one of the following values: 60, 1440, 4320, or 10080,
@@ -31,6 +30,8 @@ const (
 
 	gptPricePerTokenGPT3Dot5Turbo = 0.000002
 )
+
+var gptDefaultModel = openai.GPT3Dot5Turbo
 
 type gptCommandOptionType uint8
 
@@ -606,47 +607,56 @@ func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage,
 
 func gptCommand(params *CommandParams) *bot.Command {
 	temperatureOptionMinValue := 0.0
+	opts := []*discord.ApplicationCommandOption{
+		{
+			Type:        discord.ApplicationCommandOptionString,
+			Name:        gptCommandOptionPrompt.String(),
+			Description: "ChatGPT prompt",
+			Required:    true,
+		},
+		{
+			Type:        discord.ApplicationCommandOptionString,
+			Name:        gptCommandOptionContext.String(),
+			Description: "Sets context that guides the AI assistant's behavior during the conversation",
+			Required:    false,
+		},
+	}
+	numberOfModels := len(params.CompletionModels)
+	if numberOfModels > 0 {
+		gptDefaultModel = params.CompletionModels[0] // set first model as default one
+	}
+	if numberOfModels > 1 {
+		var modelChoices []*discord.ApplicationCommandOptionChoice
+		for i, model := range params.CompletionModels {
+			name := model
+			if i == 0 {
+				name += " (Default)"
+			}
+			modelChoices = append(modelChoices, &discord.ApplicationCommandOptionChoice{
+				Name:  name,
+				Value: model,
+			})
+		}
+		opts = append(opts, &discord.ApplicationCommandOption{
+			Type:        discord.ApplicationCommandOptionString,
+			Name:        gptCommandOptionModel.String(),
+			Description: "GPT model",
+			Required:    false,
+			Choices:     modelChoices,
+		})
+	}
+	opts = append(opts, &discord.ApplicationCommandOption{
+		Type:        discord.ApplicationCommandOptionNumber,
+		Name:        gptCommandOptionTemperature.String(),
+		Description: "What sampling temperature to use, between 0.0 and 2.0. Lower - more focused and deterministic",
+		MinValue:    &temperatureOptionMinValue,
+		MaxValue:    2.0,
+		Required:    false,
+	})
 	return &bot.Command{
 		Name:        gptCommandName,
 		Description: "Start conversation with ChatGPT",
-		Options: []*discord.ApplicationCommandOption{
-			{
-				Type:        discord.ApplicationCommandOptionString,
-				Name:        gptCommandOptionPrompt.String(),
-				Description: "ChatGPT prompt",
-				Required:    true,
-			},
-			{
-				Type:        discord.ApplicationCommandOptionString,
-				Name:        gptCommandOptionContext.String(),
-				Description: "Sets context that guides the AI assistant's behavior during the conversation",
-				Required:    false,
-			},
-			{
-				Type:        discord.ApplicationCommandOptionString,
-				Name:        gptCommandOptionModel.String(),
-				Description: "GPT model",
-				Required:    false,
-				Choices: []*discord.ApplicationCommandOptionChoice{
-					{
-						Name:  "GPT-3.5-Turbo (Default)",
-						Value: openai.GPT3Dot5Turbo,
-					},
-					{
-						Name:  "GPT-4",
-						Value: openai.GPT4,
-					},
-				},
-			},
-			{
-				Type:        discord.ApplicationCommandOptionNumber,
-				Name:        gptCommandOptionTemperature.String(),
-				Description: "What sampling temperature to use, between 0.0 and 2.0. Lower - more focused and deterministic",
-				MinValue:    &temperatureOptionMinValue,
-				MaxValue:    2.0,
-				Required:    false,
-			},
-		},
+		Options:     opts,
 		Handler: bot.HandlerFunc(func(ctx *bot.Context) {
 			chatGPTHandler(ctx, params)
 		}),

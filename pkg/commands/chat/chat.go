@@ -15,6 +15,7 @@ type IgnoredChannelsCache map[string]struct{}
 
 type CommandParams struct {
 	OpenAIClient         *openai.Client
+	CompletionModels     []string
 	GPTMessagesCache     *cache.GPTMessagesCache
 	IgnoredChannelsCache *IgnoredChannelsCache
 }

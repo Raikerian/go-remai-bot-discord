@@ -17,11 +17,13 @@ import (
 type Config struct {
 	Discord struct {
 		Token          string `yaml:"token"`
-		GuildID        string `yaml:"guild"`
+		Guild          string `yaml:"guild"`
 		RemoveCommands bool   `yaml:"removeCommands"`
-	}
-
-	OpenAIAPIKey string `yaml:"openAIAPIKey"`
+	} `yaml:"discord"`
+	OpenAI struct {
+		APIKey           string   `yaml:"apiKey"`
+		CompletionModels []string `yaml:"completionModels"`
+	} `yaml:"openAI"`
 }
 
 func (c *Config) ReadFromFile(file string) error {
@@ -71,13 +73,14 @@ func main() {
 	}
 
 	// Register commands
-	if config.OpenAIAPIKey != "" {
-		openaiClient = openai.NewClient(config.OpenAIAPIKey) // initialize OpenAI client first
+	if config.OpenAI.APIKey != "" {
+		openaiClient = openai.NewClient(config.OpenAI.APIKey) // initialize OpenAI client first
 
 		discordBot.Router.Register(chat.Command(&chat.CommandParams{
 			OpenAIClient:         openaiClient,
 			GPTMessagesCache:     gptMessagesCache,
 			IgnoredChannelsCache: &ignoredChannelsCache,
+			CompletionModels:     config.OpenAI.CompletionModels,
 		}))
 
 		imageUploadHTTPClient = &http.Client{Timeout: (commands.ImageHTTPRequestTimeout)}
@@ -89,5 +92,5 @@ func main() {
 	discordBot.Router.Register(commands.InfoCommand())
 
 	// Run the bot
-	discordBot.Run(config.Discord.GuildID, config.Discord.RemoveCommands)
+	discordBot.Run(config.Discord.Guild, config.Discord.RemoveCommands)
 }
