@@ -4,25 +4,85 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/bwmarrin/discordgo"
 	discord "github.com/bwmarrin/discordgo"
-	"github.com/raikerian/go-remai-bot-discord/pkg/commands"
 )
 
 type Router struct {
-	commands           map[string]*commands.Command
+	commands           map[string]*Command
 	registeredCommands []*discord.ApplicationCommand
 }
 
-func NewRouter() *Router {
-	return &Router{
-		commands: make(map[string]*commands.Command),
+func NewRouter(initial []*Command) (r *Router) {
+	r = &Router{commands: make(map[string]*Command, len(initial))}
+	for _, cmd := range initial {
+		r.Register(cmd)
 	}
+
+	return
 }
 
-func (r *Router) Register(cmd *commands.Command) {
+func (r *Router) Register(cmd *Command) {
 	if _, ok := r.commands[cmd.Name]; !ok {
 		r.commands[cmd.Name] = cmd
 	}
+}
+
+func (r *Router) Get(name string) *Command {
+	if r == nil {
+		return nil
+	}
+	return r.commands[name]
+}
+
+func (r *Router) List() (list []*Command) {
+	if r == nil {
+		return nil
+	}
+
+	for _, c := range r.commands {
+		list = append(list, c)
+	}
+	return
+}
+
+func (r *Router) Count() (c int) {
+	if r == nil {
+		return 0
+	}
+	return len(r.commands)
+}
+
+func (r *Router) getSubcommand(cmd *Command, opt *discord.ApplicationCommandInteractionDataOption, parent []Handler) (*Command, *discord.ApplicationCommandInteractionDataOption, []Handler) {
+	if cmd == nil {
+		return nil, nil, nil
+	}
+
+	subcommand := cmd.SubCommands.Get(opt.Name)
+	switch opt.Type {
+	case discordgo.ApplicationCommandOptionSubCommand:
+		return subcommand, opt, append(parent, append(subcommand.Middlewares, subcommand.Handler)...)
+	case discordgo.ApplicationCommandOptionSubCommandGroup:
+		return r.getSubcommand(subcommand, opt.Options[0], append(parent, subcommand.Middlewares...))
+	}
+
+	return cmd, nil, append(parent, cmd.Handler)
+}
+
+func (r *Router) getMessageHandlers(cmd *Command) []MessageHandler {
+	var handlers []MessageHandler
+
+	if cmd.MessageHandler != nil {
+		handlers = append(handlers, cmd.MessageHandler)
+	}
+
+	if cmd.SubCommands != nil {
+		for _, cmd := range cmd.SubCommands.List() {
+			handlers = append(handlers, r.getMessageHandlers(cmd)...)
+		}
+	}
+
+	return handlers
 }
 
 func (r *Router) HandleInteraction(s *discord.Session, i *discord.InteractionCreate) {
@@ -31,25 +91,28 @@ func (r *Router) HandleInteraction(s *discord.Session, i *discord.InteractionCre
 	}
 
 	data := i.ApplicationCommandData()
-	cmd := r.commands[data.Name]
+	cmd := r.Get(data.Name)
 	if cmd == nil {
 		return
 	}
 
-	ctx := commands.NewContext(s, cmd, i.Interaction, append(cmd.Middlewares, cmd.Handler))
-	ctx.Next()
+	var parent *discord.ApplicationCommandInteractionDataOption
+	handlers := append(cmd.Middlewares, cmd.Handler)
+	if len(data.Options) != 0 {
+		cmd, parent, handlers = r.getSubcommand(cmd, data.Options[0], cmd.Middlewares)
+	}
+
+	if cmd != nil {
+		ctx := NewContext(s, cmd, i.Interaction, parent, handlers)
+		ctx.Next()
+	}
 }
 
 func (r *Router) HandleMessage(s *discord.Session, m *discord.MessageCreate) {
 	for _, cmd := range r.commands {
-		if cmd.MessageHandler != nil {
-			ctx := commands.NewMessageContext(s, cmd, m.Message, cmd.MessageMiddlewares)
-
-			hit := cmd.MessageHandler.HandleMessageCommand(ctx)
-			if !hit {
-				continue
-			}
-
+		handlers := r.getMessageHandlers(cmd)
+		if len(handlers) > 0 {
+			ctx := NewMessageContext(s, cmd, m.Message, handlers)
 			ctx.Next()
 		}
 	}

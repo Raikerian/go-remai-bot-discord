@@ -11,6 +11,7 @@ import (
 	"time"
 
 	discord "github.com/bwmarrin/discordgo"
+	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
 	"github.com/raikerian/go-remai-bot-discord/pkg/utils"
 	"github.com/sashabaranov/go-openai"
 )
@@ -53,7 +54,7 @@ func (t ImageCommandOptionType) String() string {
 	return fmt.Sprintf("ApplicationCommandOptionType(%d)", t)
 }
 
-func imageInteractionResponseMiddleware(ctx *Context) {
+func imageInteractionResponseMiddleware(ctx *bot.Context) {
 	log.Printf("[GID: %s, i.ID: %s] Image interaction invoked by UserID: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, ctx.Interaction.Member.User.ID)
 
 	err := ctx.Respond(&discord.InteractionResponse{
@@ -67,7 +68,7 @@ func imageInteractionResponseMiddleware(ctx *Context) {
 	ctx.Next()
 }
 
-func imageModerationMiddleware(ctx *Context, params *ImageCommandParams) {
+func imageModerationMiddleware(ctx *bot.Context, params *ImageCommandParams) {
 	log.Printf("[GID: %s, i.ID: %s] Performing interaction moderation middleware\n", ctx.Interaction.GuildID, ctx.Interaction.ID)
 
 	var prompt string
@@ -117,7 +118,7 @@ func imageModerationMiddleware(ctx *Context, params *ImageCommandParams) {
 	ctx.Next()
 }
 
-func imageHandler(ctx *Context, params *ImageCommandParams) {
+func imageHandler(ctx *bot.Context, params *ImageCommandParams) {
 	var prompt string
 	if option, ok := ctx.Options[ImageCommandOptionPrompt.String()]; ok {
 		prompt = option.StringValue()
@@ -281,9 +282,9 @@ func attachCreateImageUsageInfo(s *discord.Session, m *discord.Message, size str
 	})
 }
 
-func ImageCommand(params *ImageCommandParams) *Command {
+func ImageCommand(params *ImageCommandParams) *bot.Command {
 	numberOptionMinValue := 1.0
-	return &Command{
+	return &bot.Command{
 		Name:                     imageCommandName,
 		Description:              "Generate creative images from textual descriptions",
 		DMPermission:             false,
@@ -324,12 +325,12 @@ func ImageCommand(params *ImageCommandParams) *Command {
 				Required:    false,
 			},
 		},
-		Handler: HandlerFunc(func(ctx *Context) {
+		Handler: bot.HandlerFunc(func(ctx *bot.Context) {
 			imageHandler(ctx, params)
 		}),
-		Middlewares: []Handler{
-			HandlerFunc(imageInteractionResponseMiddleware),
-			HandlerFunc(func(ctx *Context) {
+		Middlewares: []bot.Handler{
+			bot.HandlerFunc(imageInteractionResponseMiddleware),
+			bot.HandlerFunc(func(ctx *bot.Context) {
 				imageModerationMiddleware(ctx, params)
 			}),
 		},

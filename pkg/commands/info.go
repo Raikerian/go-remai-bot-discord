@@ -2,6 +2,7 @@ package commands
 
 import (
 	discord "github.com/bwmarrin/discordgo"
+	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
 	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 )
 
@@ -9,7 +10,7 @@ const (
 	infoCommandName = "info"
 )
 
-func infoHandler(ctx *Context) {
+func infoHandler(ctx *bot.Context) {
 	ctx.Respond(&discord.InteractionResponse{
 		Type: discord.InteractionResponseChannelMessageWithSource,
 		Data: &discord.InteractionResponseData{
@@ -38,12 +39,12 @@ func infoHandler(ctx *Context) {
 	})
 }
 
-func InfoCommand() *Command {
-	return &Command{
+func InfoCommand() *bot.Command {
+	return &bot.Command{
 		Name:                     infoCommandName,
 		Description:              "Show information about current version of Rem AI",
 		DMPermission:             true,
 		DefaultMemberPermissions: discord.PermissionViewChannel,
-		Handler:                  HandlerFunc(infoHandler),
+		Handler:                  bot.HandlerFunc(infoHandler),
 	}
 }

@@ -1,4 +1,4 @@
-package commands
+package bot
 
 import (
 	discord "github.com/bwmarrin/discordgo"
@@ -25,12 +25,16 @@ func makeOptionMap(options []*discord.ApplicationCommandInteractionDataOption) (
 	return
 }
 
-func NewContext(s *discord.Session, caller *Command, i *discord.Interaction, handlers []Handler) *Context {
+func NewContext(s *discord.Session, caller *Command, i *discord.Interaction, parent *discord.ApplicationCommandInteractionDataOption, handlers []Handler) *Context {
+	options := i.ApplicationCommandData().Options
+	if parent != nil {
+		options = parent.Options
+	}
 	return &Context{
 		Session:     s,
 		Caller:      caller,
 		Interaction: i,
-		Options:     makeOptionMap(i.ApplicationCommandData().Options),
+		Options:     makeOptionMap(options),
 
 		handlers: handlers,
 	}
@@ -61,10 +65,6 @@ func (ctx *Context) Next() {
 
 	handler.HandleCommand(ctx)
 }
-
-// func (ctx *Context) String() string {
-// 	return fmt.Sprintf(`caller: %s guild: %s options: %v`, ctx.Caller.Name, ctx.Interaction.GuildID, ctx.Options)
-// }
 
 type MessageContext struct {
 	*discord.Session
