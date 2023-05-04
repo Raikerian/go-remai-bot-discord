@@ -398,17 +398,19 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) {
 			return
 		}
 
-		tokenCount := tokenCount(cacheItem.Messages, cacheItem.Model)
-		if tokenCount != nil {
-			cacheItem.TokenCount = *tokenCount
-		}
-
 		params.GPTMessagesCache.Add(ctx.Message.ChannelID, cacheItem)
 	} else {
 		cacheItem.Messages = append(cacheItem.Messages, openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleUser,
 			Content: ctx.Message.Content,
 		})
+	}
+
+	// adjust messages to fit token limit of the model
+	tokenCount := countAllTokens(cacheItem.SystemMessage, cacheItem.Messages, cacheItem.Model)
+	if tokenCount != nil {
+		cacheItem.TokenCount = *tokenCount
+		adjustMessageTokens(cacheItem)
 	}
 
 	// Lock the thread while we are generating ChatGPT answser
@@ -484,6 +486,25 @@ func parseInteractionReply(discordMessage *discord.Message) (prompt string, cont
 	}
 
 	return
+}
+
+func adjustMessageTokens(cacheItem *cache.GPTMessagesCacheData) {
+	truncateLimit := 3500
+	switch cacheItem.Model {
+	case openai.GPT4:
+		truncateLimit = 6500
+	case openai.GPT432K:
+		truncateLimit = 30500
+	}
+
+	for cacheItem.TokenCount > truncateLimit {
+		cacheItem.Messages = cacheItem.Messages[1:]
+		tokens := countAllTokens(cacheItem.SystemMessage, cacheItem.Messages, cacheItem.Model)
+		if tokens == nil {
+			return
+		}
+		cacheItem.TokenCount = *tokens
+	}
 }
 
 type chatGPTResponse struct {

@@ -5,7 +5,7 @@ import (
 	"github.com/tiktoken-go/tokenizer"
 )
 
-func tokenCount(messages []openai.ChatCompletionMessage, model string) *int {
+func countTokens(messages []openai.ChatCompletionMessage, model string) *int {
 	enc, err := tokenizer.ForModel(tokenizer.Model(model))
 	if err != nil {
 		enc, _ = tokenizer.Get(tokenizer.Cl100kBase)
@@ -39,4 +39,11 @@ func tokenCount(messages []openai.ChatCompletionMessage, model string) *int {
 	tokens += 2 // every reply is primed with <im_start>assistant
 
 	return &tokens
+}
+
+func countAllTokens(systemMessage *openai.ChatCompletionMessage, messages []openai.ChatCompletionMessage, model string) *int {
+	if systemMessage != nil {
+		messages = append(messages, *systemMessage)
+	}
+	return countTokens(messages, model)
 }
