@@ -28,7 +28,9 @@ const (
 	gptEmojiAck       = "⌛"
 	gptEmojiErr       = "❌"
 
-	gptPricePerTokenGPT3Dot5Turbo = 0.000002
+	gptPricePerTokenGPT3Dot5Turbo  = 0.000002
+	gptPricePerPromptTokenGPT4     = 0.00003
+	gptPricePerCompletionTokenGPT4 = 0.00006
 )
 
 var gptDefaultModel = openai.GPT3Dot5Turbo
@@ -590,9 +592,16 @@ func generateThreadTitleBasedOnInitialPrompt(ctx *bot.Context, client *openai.Cl
 
 func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage, model string) {
 	extraInfo := fmt.Sprintf("Completion Tokens: %d, Total: %d", usage.CompletionTokens, usage.TotalTokens)
-	if model == openai.GPT3Dot5Turbo {
+	switch model {
+	case openai.GPT3Dot5Turbo, openai.GPT3Dot5Turbo0301:
+		// gpt-3.5-turbo may change over time. Calculating usage assuming gpt-3.5-turbo-0301
 		extraInfo += fmt.Sprintf("\nLLM Cost: $%f", float64(usage.TotalTokens)*gptPricePerTokenGPT3Dot5Turbo)
+	case openai.GPT4, openai.GPT40314:
+		// gpt-4 may change over time. Calculating usage assuming gpt-4-0314
+		usage := float64(usage.PromptTokens)*gptPricePerPromptTokenGPT4 + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT4
+		extraInfo += fmt.Sprintf("\nLLM Cost: $%f", usage)
 	}
+
 	utils.DiscordChannelMessageEdit(s, m.ID, m.ChannelID, nil, []*discord.MessageEmbed{
 		{
 			Fields: []*discord.MessageEmbedField{
