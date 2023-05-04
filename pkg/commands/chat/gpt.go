@@ -130,7 +130,7 @@ func chatGPTHandler(ctx *bot.Context, params *CommandParams) {
 		model = option.StringValue()
 		log.Printf("[GID: %s, i.ID: %s] Model provided: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, model)
 	}
-	cacheItem.GPTModel = model
+	cacheItem.Model = model
 	fields = append(fields, &discord.MessageEmbedField{
 		Name:  gptCommandOptionModel.HumanReadableString(),
 		Value: model,
@@ -208,7 +208,7 @@ func chatGPTHandler(ctx *bot.Context, params *CommandParams) {
 
 	params.GPTMessagesCache.Add(thread.ID, cacheItem)
 
-	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.GPTModel, len(cacheItem.Messages))
+	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.Model, len(cacheItem.Messages))
 	resp, err := sendChatGPTRequest(params.OpenAIClient, cacheItem)
 	if err != nil {
 		// ChatGPT failed for whatever reason, tell users about it
@@ -226,7 +226,7 @@ func chatGPTHandler(ctx *bot.Context, params *CommandParams) {
 
 	go generateThreadTitleBasedOnInitialPrompt(ctx, params.OpenAIClient, thread.ID, cacheItem.Messages)
 
-	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.GPTModel, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
+	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.Model, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
 
 	messages := splitMessage(resp.content)
 	err = utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &messages[0], nil)
@@ -253,7 +253,7 @@ func chatGPTHandler(ctx *bot.Context, params *CommandParams) {
 		}
 	}
 
-	attachUsageInfo(ctx.Session, channelMessage, resp.usage, cacheItem.GPTModel)
+	attachUsageInfo(ctx.Session, channelMessage, resp.usage, cacheItem.Model)
 }
 
 func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) {
@@ -358,7 +358,7 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) {
 					}
 
 					cacheItem.SystemMessage = systemMessage
-					cacheItem.GPTModel = model
+					cacheItem.Model = model
 				} else if !shouldHandleMessageType(value.Type) {
 					// ignore message types that are
 					// not related to conversation
@@ -398,6 +398,11 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) {
 			return
 		}
 
+		tokenCount := tokenCount(cacheItem.Messages, cacheItem.Model)
+		if tokenCount != nil {
+			cacheItem.TokenCount = *tokenCount
+		}
+
 		params.GPTMessagesCache.Add(ctx.Message.ChannelID, cacheItem)
 	} else {
 		cacheItem.Messages = append(cacheItem.Messages, openai.ChatCompletionMessage{
@@ -415,7 +420,7 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) {
 	defer ctx.RemoveReaction(gptEmojiAck)
 	ctx.ChannelTyping()
 
-	log.Printf("[GID: %s, CHID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, cacheItem.GPTModel, len(cacheItem.Messages))
+	log.Printf("[GID: %s, CHID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, cacheItem.Model, len(cacheItem.Messages))
 	resp, err := sendChatGPTRequest(params.OpenAIClient, cacheItem)
 	if err != nil {
 		// ChatGPT failed for whatever reason, tell users about it
@@ -429,7 +434,7 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) {
 		return
 	}
 
-	log.Printf("[GID: %s, CHID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Message.GuildID, ctx.Message.ChannelID, cacheItem.GPTModel, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
+	log.Printf("[GID: %s, CHID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Message.GuildID, ctx.Message.ChannelID, cacheItem.Model, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
 
 	messages := splitMessage(resp.content)
 	var replyMessage *discord.Message
@@ -447,7 +452,7 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) {
 		}
 	}
 
-	attachUsageInfo(ctx.Session, replyMessage, resp.usage, cacheItem.GPTModel)
+	attachUsageInfo(ctx.Session, replyMessage, resp.usage, cacheItem.Model)
 }
 
 func shouldHandleMessageType(t discord.MessageType) (ok bool) {
@@ -494,7 +499,7 @@ func sendChatGPTRequest(client *openai.Client, cacheItem *cache.GPTMessagesCache
 	}
 
 	req := openai.ChatCompletionRequest{
-		Model:    cacheItem.GPTModel,
+		Model:    cacheItem.Model,
 		Messages: messages,
 	}
 
@@ -516,6 +521,7 @@ func sendChatGPTRequest(client *openai.Client, cacheItem *cache.GPTMessagesCache
 		Role:    openai.ChatMessageRoleAssistant,
 		Content: responseContent,
 	})
+	cacheItem.TokenCount = resp.Usage.TotalTokens
 	return &chatGPTResponse{
 		content: responseContent,
 		usage:   resp.Usage,
