@@ -48,7 +48,6 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 
 	fields := make([]*discord.MessageEmbedField, 0, 4)
 	fields = append(fields, &discord.MessageEmbedField{
-		Name:  "\u200B",
 		Value: "\u200B",
 	})
 
