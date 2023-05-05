@@ -1,15 +1,17 @@
-package cache
+package gpt
 
 import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/sashabaranov/go-openai"
 )
 
-type GPTMessagesCache struct {
-	*lru.Cache[string, *GPTMessagesCacheData]
+type IgnoredChannelsCache map[string]struct{}
+
+type MessagesCache struct {
+	*lru.Cache[string, *MessagesCacheData]
 }
 
-type GPTMessagesCacheData struct {
+type MessagesCacheData struct {
 	Messages      []openai.ChatCompletionMessage
 	SystemMessage *openai.ChatCompletionMessage
 	Model         string
@@ -17,13 +19,13 @@ type GPTMessagesCacheData struct {
 	TokenCount    int
 }
 
-func NewGPTMessagesCache(size int) (*GPTMessagesCache, error) {
-	lruCache, err := lru.New[string, *GPTMessagesCacheData](size)
+func NewMessagesCache(size int) (*MessagesCache, error) {
+	lruCache, err := lru.New[string, *MessagesCacheData](size)
 	if err != nil {
 		return nil, err
 	}
 
-	return &GPTMessagesCache{
+	return &MessagesCache{
 		Cache: lruCache,
 	}, nil
 }
