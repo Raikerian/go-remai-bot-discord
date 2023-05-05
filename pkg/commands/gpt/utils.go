@@ -83,22 +83,27 @@ func parseInteractionReply(discordMessage *discord.Message) (prompt string, cont
 		return
 	}
 
-	for _, value := range discordMessage.Embeds[0].Fields {
-		switch value.Name {
-		case gptCommandOptionPrompt.humanReadableString():
-			prompt = value.Value
-		case gptCommandOptionContext.humanReadableString():
-			context = value.Value
-		case gptCommandOptionModel.humanReadableString():
-			model = value.Value
-		case gptCommandOptionTemperature.humanReadableString():
-			parsedValue, err := strconv.ParseFloat(value.Value, 32)
-			if err != nil {
-				log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to parse temperature value from the message with the error: %v\n", discordMessage.GuildID, discordMessage.ChannelID, discordMessage.ID, err)
-				continue
+	for _, embed := range discordMessage.Embeds {
+		if embed.Description != "" {
+			prompt = embed.Description
+		}
+		for _, field := range embed.Fields {
+			switch field.Name {
+			case gptCommandOptionPrompt.humanReadableString():
+				prompt = field.Value
+			case gptCommandOptionContext.humanReadableString():
+				context = field.Value
+			case gptCommandOptionModel.humanReadableString():
+				model = field.Value
+			case gptCommandOptionTemperature.humanReadableString():
+				parsedValue, err := strconv.ParseFloat(field.Value, 32)
+				if err != nil {
+					log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to parse temperature value from the message with the error: %v\n", discordMessage.GuildID, discordMessage.ChannelID, discordMessage.ID, err)
+					continue
+				}
+				temp := float32(parsedValue)
+				temperature = &temp
 			}
-			temp := float32(parsedValue)
-			temperature = &temp
 		}
 	}
 

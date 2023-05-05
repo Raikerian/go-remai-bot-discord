@@ -22,9 +22,10 @@ const (
 	// (1 hour, 1 day, 3 days, or 7 days, respectively).
 	gptDiscordThreadAutoArchivewDurationMinutes = 60
 
-	gptPendingMessage = "⌛ Wait a moment, please..."
-	gptEmojiAck       = "⌛"
-	gptEmojiErr       = "❌"
+	gptInteractionEmbedColor = 0x000000
+	gptPendingMessage        = "⌛ Wait a moment, please..."
+	gptEmojiAck              = "⌛"
+	gptEmojiErr              = "❌"
 )
 
 func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *MessagesCache) {
@@ -53,10 +54,10 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 		return
 	}
 
-	fields := make([]*discord.MessageEmbedField, 0, 3)
+	fields := make([]*discord.MessageEmbedField, 0, 4)
 	fields = append(fields, &discord.MessageEmbedField{
-		Name:  gptCommandOptionPrompt.humanReadableString(),
-		Value: prompt,
+		Name:  "\u200B",
+		Value: "\u200B",
 	})
 
 	// Prepare cache item
@@ -111,7 +112,13 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 			Content: fmt.Sprintf("<@%s>", ctx.Interaction.Member.User.ID),
 			Embeds: []*discord.MessageEmbed{
 				{
-					Title:  "OpenAI GPT request by " + ctx.Interaction.Member.User.Username + "#" + ctx.Interaction.Member.User.Discriminator,
+					Description: prompt,
+					Color:       gptInteractionEmbedColor,
+					Author: &discord.MessageEmbedAuthor{
+						Name:         "OpenAI chat request by " + ctx.Interaction.Member.User.Username,
+						IconURL:      ctx.Interaction.Member.User.AvatarURL("32"),
+						ProxyIconURL: gptOpenAIBlackIconURL,
+					},
 					Fields: fields,
 				},
 			},
