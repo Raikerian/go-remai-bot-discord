@@ -1,17 +1,16 @@
 package gpt
 
 import (
-	"context"
 	"fmt"
 	"log"
-	"strconv"
-	"strings"
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
 	"github.com/raikerian/go-remai-bot-discord/pkg/utils"
 	"github.com/sashabaranov/go-openai"
 )
+
+var gptDefaultModel = openai.GPT3Dot5Turbo
 
 const (
 	gptCommandName = "gpt"
@@ -26,50 +25,7 @@ const (
 	gptPendingMessage = "⌛ Wait a moment, please..."
 	gptEmojiAck       = "⌛"
 	gptEmojiErr       = "❌"
-
-	gptPricePerTokenGPT3Dot5Turbo  = 0.000002
-	gptPricePerPromptTokenGPT4     = 0.00003
-	gptPricePerCompletionTokenGPT4 = 0.00006
 )
-
-var gptDefaultModel = openai.GPT3Dot5Turbo
-
-type gptCommandOptionType uint8
-
-const (
-	gptCommandOptionPrompt      gptCommandOptionType = 1
-	gptCommandOptionContext     gptCommandOptionType = 2
-	gptCommandOptionModel       gptCommandOptionType = 3
-	gptCommandOptionTemperature gptCommandOptionType = 4
-)
-
-func (t gptCommandOptionType) String() string {
-	switch t {
-	case gptCommandOptionPrompt:
-		return "prompt"
-	case gptCommandOptionContext:
-		return "context"
-	case gptCommandOptionModel:
-		return "model"
-	case gptCommandOptionTemperature:
-		return "temperature"
-	}
-	return fmt.Sprintf("ApplicationCommandOptionType(%d)", t)
-}
-
-func (t gptCommandOptionType) HumanReadableString() string {
-	switch t {
-	case gptCommandOptionPrompt:
-		return "Prompt"
-	case gptCommandOptionContext:
-		return "Context"
-	case gptCommandOptionModel:
-		return "Model"
-	case gptCommandOptionTemperature:
-		return "Temperature"
-	}
-	return fmt.Sprintf("ApplicationCommandOptionType(%d)", t)
-}
 
 func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *MessagesCache) {
 	ch, err := ctx.Session.State.Channel(ctx.Interaction.ChannelID)
@@ -82,7 +38,7 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 	log.Printf("[GID: %s, i.ID: %s] ChatGPT interaction invoked by UserID: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, ctx.Interaction.Member.User.ID)
 
 	var prompt string
-	if option, ok := ctx.Options[gptCommandOptionPrompt.String()]; ok {
+	if option, ok := ctx.Options[gptCommandOptionPrompt.string()]; ok {
 		prompt = option.StringValue()
 	} else {
 		// We can't have empty prompt, unfortunately
@@ -99,7 +55,7 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 
 	fields := make([]*discord.MessageEmbedField, 0, 3)
 	fields = append(fields, &discord.MessageEmbedField{
-		Name:  gptCommandOptionPrompt.HumanReadableString(),
+		Name:  gptCommandOptionPrompt.humanReadableString(),
 		Value: prompt,
 	})
 
@@ -114,35 +70,35 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 	}
 
 	// Set context of the conversation as a system message
-	if option, ok := ctx.Options[gptCommandOptionContext.String()]; ok {
+	if option, ok := ctx.Options[gptCommandOptionContext.string()]; ok {
 		context := option.StringValue()
 		cacheItem.SystemMessage = &openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleSystem,
 			Content: context,
 		}
 		fields = append(fields, &discord.MessageEmbedField{
-			Name:  gptCommandOptionContext.HumanReadableString(),
+			Name:  gptCommandOptionContext.humanReadableString(),
 			Value: context,
 		})
 		log.Printf("[GID: %s, i.ID: %s] Context provided: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, context)
 	}
 
 	model := gptDefaultModel
-	if option, ok := ctx.Options[gptCommandOptionModel.String()]; ok {
+	if option, ok := ctx.Options[gptCommandOptionModel.string()]; ok {
 		model = option.StringValue()
 		log.Printf("[GID: %s, i.ID: %s] Model provided: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, model)
 	}
 	cacheItem.Model = model
 	fields = append(fields, &discord.MessageEmbedField{
-		Name:  gptCommandOptionModel.HumanReadableString(),
+		Name:  gptCommandOptionModel.humanReadableString(),
 		Value: model,
 	})
 
-	if option, ok := ctx.Options[gptCommandOptionTemperature.String()]; ok {
+	if option, ok := ctx.Options[gptCommandOptionTemperature.string()]; ok {
 		temp := float32(option.FloatValue())
 		cacheItem.Temperature = &temp
 		fields = append(fields, &discord.MessageEmbedField{
-			Name:  gptCommandOptionTemperature.HumanReadableString(),
+			Name:  gptCommandOptionTemperature.humanReadableString(),
 			Value: fmt.Sprintf("%g", temp),
 		})
 		log.Printf("[GID: %s, i.ID: %s] Temperature provided: %g\n", ctx.Interaction.GuildID, ctx.Interaction.ID, temp)
@@ -459,172 +415,18 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, client *openai.Client, messa
 	attachUsageInfo(ctx.Session, replyMessage, resp.usage, cacheItem.Model)
 }
 
-func shouldHandleMessageType(t discord.MessageType) (ok bool) {
-	return t == discord.MessageTypeDefault || t == discord.MessageTypeReply
-}
-
-func parseInteractionReply(discordMessage *discord.Message) (prompt string, context string, model string, temperature *float32) {
-	if discordMessage.Embeds == nil || len(discordMessage.Embeds) == 0 {
-		return
-	}
-
-	for _, value := range discordMessage.Embeds[0].Fields {
-		switch value.Name {
-		case gptCommandOptionPrompt.HumanReadableString():
-			prompt = value.Value
-		case gptCommandOptionContext.HumanReadableString():
-			context = value.Value
-		case gptCommandOptionModel.HumanReadableString():
-			model = value.Value
-		case gptCommandOptionTemperature.HumanReadableString():
-			parsedValue, err := strconv.ParseFloat(value.Value, 32)
-			if err != nil {
-				log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to parse temperature value from the message with the error: %v\n", discordMessage.GuildID, discordMessage.ChannelID, discordMessage.ID, err)
-				continue
-			}
-			temp := float32(parsedValue)
-			temperature = &temp
-		}
-	}
-
-	return
-}
-
-func adjustMessageTokens(cacheItem *MessagesCacheData) {
-	truncateLimit := 3500
-	switch cacheItem.Model {
-	case openai.GPT4:
-		truncateLimit = 6500
-	case openai.GPT432K:
-		truncateLimit = 30500
-	}
-
-	for cacheItem.TokenCount > truncateLimit {
-		cacheItem.Messages = cacheItem.Messages[1:]
-		tokens := countAllTokens(cacheItem.SystemMessage, cacheItem.Messages, cacheItem.Model)
-		if tokens == nil {
-			return
-		}
-		cacheItem.TokenCount = *tokens
-	}
-}
-
-type chatGPTResponse struct {
-	content string
-	usage   openai.Usage
-}
-
-func sendChatGPTRequest(client *openai.Client, cacheItem *MessagesCacheData) (*chatGPTResponse, error) {
-	// Create message with ChatGPT
-	messages := cacheItem.Messages
-	if cacheItem.SystemMessage != nil {
-		messages = append([]openai.ChatCompletionMessage{*cacheItem.SystemMessage}, messages...)
-	}
-
-	req := openai.ChatCompletionRequest{
-		Model:    cacheItem.Model,
-		Messages: messages,
-	}
-
-	if cacheItem.Temperature != nil {
-		req.Temperature = *cacheItem.Temperature
-	}
-
-	resp, err := client.CreateChatCompletion(
-		context.Background(),
-		req,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Save response to context cache
-	responseContent := resp.Choices[0].Message.Content
-	cacheItem.Messages = append(cacheItem.Messages, openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleAssistant,
-		Content: responseContent,
-	})
-	cacheItem.TokenCount = resp.Usage.TotalTokens
-	return &chatGPTResponse{
-		content: responseContent,
-		usage:   resp.Usage,
-	}, nil
-}
-
-func generateThreadTitleBasedOnInitialPrompt(ctx *bot.Context, client *openai.Client, threadID string, messages []openai.ChatCompletionMessage) {
-	conversation := make([]map[string]string, len(messages))
-	for i, msg := range messages {
-		conversation[i] = map[string]string{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	// Combine the conversation messages into a single string
-	var conversationTextBuilder strings.Builder
-	for _, msg := range conversation {
-		conversationTextBuilder.WriteString(fmt.Sprintf("%s: %s\n", msg["role"], msg["content"]))
-	}
-	conversationText := conversationTextBuilder.String()
-
-	// Create a prompt that asks the model to generate a title
-	prompt := fmt.Sprintf("%s\nGenerate a short and concise title summarizing the conversation in the same language. The title must not contain any quotes. The title should be no longer than 60 characters:", conversationText)
-
-	resp, err := client.CreateCompletion(context.Background(), openai.CompletionRequest{
-		Model:       openai.GPT3TextDavinci003,
-		Prompt:      prompt,
-		Temperature: 0.5,
-		MaxTokens:   75,
-	})
-	if err != nil {
-		log.Printf("[GID: %s, threadID: %s] Failed to generate thread title with the error: %v\n", ctx.Interaction.GuildID, threadID, err)
-		return
-	}
-
-	_, err = ctx.Session.ChannelEditComplex(threadID, &discord.ChannelEdit{
-		Name: resp.Choices[0].Text,
-	})
-	if err != nil {
-		log.Printf("[GID: %s, i.ID: %s] Failed to update thread title with the error: %v\n", ctx.Interaction.GuildID, threadID, err)
-	}
-}
-
-func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage, model string) {
-	extraInfo := fmt.Sprintf("Completion Tokens: %d, Total: %d", usage.CompletionTokens, usage.TotalTokens)
-	switch model {
-	case openai.GPT3Dot5Turbo, openai.GPT3Dot5Turbo0301:
-		// gpt-3.5-turbo may change over time. Calculating usage assuming gpt-3.5-turbo-0301
-		extraInfo += fmt.Sprintf("\nLLM Cost: $%f", float64(usage.TotalTokens)*gptPricePerTokenGPT3Dot5Turbo)
-	case openai.GPT4, openai.GPT40314:
-		// gpt-4 may change over time. Calculating usage assuming gpt-4-0314
-		usage := float64(usage.PromptTokens)*gptPricePerPromptTokenGPT4 + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT4
-		extraInfo += fmt.Sprintf("\nLLM Cost: $%f", usage)
-	}
-
-	utils.DiscordChannelMessageEdit(s, m.ID, m.ChannelID, nil, []*discord.MessageEmbed{
-		{
-			Fields: []*discord.MessageEmbedField{
-				{
-					Name:  "Usage",
-					Value: extraInfo,
-				},
-			},
-		},
-	})
-}
-
 func Command(client *openai.Client, completionModels []string, messagesCache *MessagesCache, ignoredChannelsCache *IgnoredChannelsCache) *bot.Command {
 	temperatureOptionMinValue := 0.0
 	opts := []*discord.ApplicationCommandOption{
 		{
 			Type:        discord.ApplicationCommandOptionString,
-			Name:        gptCommandOptionPrompt.String(),
+			Name:        gptCommandOptionPrompt.string(),
 			Description: "ChatGPT prompt",
 			Required:    true,
 		},
 		{
 			Type:        discord.ApplicationCommandOptionString,
-			Name:        gptCommandOptionContext.String(),
+			Name:        gptCommandOptionContext.string(),
 			Description: "Sets context that guides the AI assistant's behavior during the conversation",
 			Required:    false,
 		},
@@ -647,7 +449,7 @@ func Command(client *openai.Client, completionModels []string, messagesCache *Me
 		}
 		opts = append(opts, &discord.ApplicationCommandOption{
 			Type:        discord.ApplicationCommandOptionString,
-			Name:        gptCommandOptionModel.String(),
+			Name:        gptCommandOptionModel.string(),
 			Description: "GPT model",
 			Required:    false,
 			Choices:     modelChoices,
@@ -655,7 +457,7 @@ func Command(client *openai.Client, completionModels []string, messagesCache *Me
 	}
 	opts = append(opts, &discord.ApplicationCommandOption{
 		Type:        discord.ApplicationCommandOptionNumber,
-		Name:        gptCommandOptionTemperature.String(),
+		Name:        gptCommandOptionTemperature.string(),
 		Description: "What sampling temperature to use, between 0.0 and 2.0. Lower - more focused and deterministic",
 		MinValue:    &temperatureOptionMinValue,
 		MaxValue:    2.0,
