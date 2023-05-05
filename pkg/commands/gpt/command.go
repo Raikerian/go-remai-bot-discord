@@ -1,4 +1,4 @@
-package chat
+package gpt
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
-	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
 	"github.com/raikerian/go-remai-bot-discord/pkg/utils"
 	"github.com/sashabaranov/go-openai"
 )
@@ -72,7 +71,7 @@ func (t gptCommandOptionType) HumanReadableString() string {
 	return fmt.Sprintf("ApplicationCommandOptionType(%d)", t)
 }
 
-func chatGPTHandler(ctx *bot.Context, params *CommandParams) {
+func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *MessagesCache) {
 	ch, err := ctx.Session.State.Channel(ctx.Interaction.ChannelID)
 	if err == nil && ch.IsThread() {
 		// ignore interactions invoked in threads
@@ -105,7 +104,7 @@ func chatGPTHandler(ctx *bot.Context, params *CommandParams) {
 	})
 
 	// Prepare cache item
-	cacheItem := &cache.GPTMessagesCacheData{
+	cacheItem := &MessagesCacheData{
 		Messages: []openai.ChatCompletionMessage{
 			{
 				Role:    openai.ChatMessageRoleUser,
@@ -206,10 +205,10 @@ func chatGPTHandler(ctx *bot.Context, params *CommandParams) {
 		return
 	}
 
-	params.GPTMessagesCache.Add(thread.ID, cacheItem)
+	messagesCache.Add(thread.ID, cacheItem)
 
 	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.Model, len(cacheItem.Messages))
-	resp, err := sendChatGPTRequest(params.OpenAIClient, cacheItem)
+	resp, err := sendChatGPTRequest(client, cacheItem)
 	if err != nil {
 		// ChatGPT failed for whatever reason, tell users about it
 		log.Printf("[GID: %s, i.ID: %s] OpenAI request ChatCompletion failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
@@ -227,7 +226,7 @@ func chatGPTHandler(ctx *bot.Context, params *CommandParams) {
 	// Unlock the thread at the end
 	defer utils.ToggleDiscordThreadLock(ctx.Session, thread.ID, false)
 
-	go generateThreadTitleBasedOnInitialPrompt(ctx, params.OpenAIClient, thread.ID, cacheItem.Messages)
+	go generateThreadTitleBasedOnInitialPrompt(ctx, client, thread.ID, cacheItem.Messages)
 
 	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request [Model: %s] responded with a usage: [PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d]\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.Model, resp.usage.PromptTokens, resp.usage.CompletionTokens, resp.usage.TotalTokens)
 
@@ -259,7 +258,7 @@ func chatGPTHandler(ctx *bot.Context, params *CommandParams) {
 	attachUsageInfo(ctx.Session, channelMessage, resp.usage, cacheItem.Model)
 }
 
-func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) {
+func chatGPTMessageHandler(ctx *bot.MessageContext, client *openai.Client, messagesCache *MessagesCache, ignoredChannelsCache *IgnoredChannelsCache) {
 	if !shouldHandleMessageType(ctx.Message.Type) {
 		// ignore message types that should not be handled by this command
 		return
@@ -270,7 +269,7 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) {
 		return
 	}
 
-	if _, exists := (*params.IgnoredChannelsCache)[ctx.Message.ChannelID]; exists {
+	if _, exists := (*ignoredChannelsCache)[ctx.Message.ChannelID]; exists {
 		// skip over ignored channels list
 		return
 	}
@@ -288,7 +287,7 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) {
 
 	if !ch.IsThread() {
 		// ignore non threads
-		(*params.IgnoredChannelsCache)[ctx.Message.ChannelID] = struct{}{}
+		(*ignoredChannelsCache)[ctx.Message.ChannelID] = struct{}{}
 		return
 	}
 
@@ -300,10 +299,10 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) {
 
 	log.Printf("[GID: %s, CHID: %s, MID: %s] Handling new message in a potential GPT thread\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID)
 
-	cacheItem, ok := params.GPTMessagesCache.Get(ctx.Message.ChannelID)
+	cacheItem, ok := messagesCache.Get(ctx.Message.ChannelID)
 	if !ok {
 		isGPTThread := true
-		cacheItem = &cache.GPTMessagesCacheData{}
+		cacheItem = &MessagesCacheData{}
 
 		var lastID string
 		retries := 0
@@ -397,11 +396,11 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) {
 			// this was not a GPT thread
 			log.Printf("[GID: %s, CHID: %s, MID: %s] Not a GPT thread, saving to ignored cache to skip over it later\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID)
 			// save threadID to ignored cache, so we can always ignore it later
-			(*params.IgnoredChannelsCache)[ctx.Message.ChannelID] = struct{}{}
+			(*ignoredChannelsCache)[ctx.Message.ChannelID] = struct{}{}
 			return
 		}
 
-		params.GPTMessagesCache.Add(ctx.Message.ChannelID, cacheItem)
+		messagesCache.Add(ctx.Message.ChannelID, cacheItem)
 	} else {
 		cacheItem.Messages = append(cacheItem.Messages, openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleUser,
@@ -426,7 +425,7 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, params *CommandParams) {
 	ctx.ChannelTyping()
 
 	log.Printf("[GID: %s, CHID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, cacheItem.Model, len(cacheItem.Messages))
-	resp, err := sendChatGPTRequest(params.OpenAIClient, cacheItem)
+	resp, err := sendChatGPTRequest(client, cacheItem)
 	if err != nil {
 		// ChatGPT failed for whatever reason, tell users about it
 		log.Printf("[GID: %s, CHID: %s] ChatGPT request ChatCompletion failed with the error: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, err)
@@ -491,7 +490,7 @@ func parseInteractionReply(discordMessage *discord.Message) (prompt string, cont
 	return
 }
 
-func adjustMessageTokens(cacheItem *cache.GPTMessagesCacheData) {
+func adjustMessageTokens(cacheItem *MessagesCacheData) {
 	truncateLimit := 3500
 	switch cacheItem.Model {
 	case openai.GPT4:
@@ -515,7 +514,7 @@ type chatGPTResponse struct {
 	usage   openai.Usage
 }
 
-func sendChatGPTRequest(client *openai.Client, cacheItem *cache.GPTMessagesCacheData) (*chatGPTResponse, error) {
+func sendChatGPTRequest(client *openai.Client, cacheItem *MessagesCacheData) (*chatGPTResponse, error) {
 	// Create message with ChatGPT
 	messages := cacheItem.Messages
 	if cacheItem.SystemMessage != nil {
@@ -614,7 +613,7 @@ func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage,
 	})
 }
 
-func gptCommand(params *CommandParams) *bot.Command {
+func Command(client *openai.Client, completionModels []string, messagesCache *MessagesCache, ignoredChannelsCache *IgnoredChannelsCache) *bot.Command {
 	temperatureOptionMinValue := 0.0
 	opts := []*discord.ApplicationCommandOption{
 		{
@@ -630,13 +629,13 @@ func gptCommand(params *CommandParams) *bot.Command {
 			Required:    false,
 		},
 	}
-	numberOfModels := len(params.CompletionModels)
+	numberOfModels := len(completionModels)
 	if numberOfModels > 0 {
-		gptDefaultModel = params.CompletionModels[0] // set first model as default one
+		gptDefaultModel = completionModels[0] // set first model as default one
 	}
 	if numberOfModels > 1 {
 		var modelChoices []*discord.ApplicationCommandOptionChoice
-		for i, model := range params.CompletionModels {
+		for i, model := range completionModels {
 			name := model
 			if i == 0 {
 				name += " (Default)"
@@ -667,10 +666,10 @@ func gptCommand(params *CommandParams) *bot.Command {
 		Description: "Start conversation with ChatGPT",
 		Options:     opts,
 		Handler: bot.HandlerFunc(func(ctx *bot.Context) {
-			chatGPTHandler(ctx, params)
+			chatGPTHandler(ctx, client, messagesCache)
 		}),
 		MessageHandler: bot.MessageHandlerFunc(func(ctx *bot.MessageContext) {
-			chatGPTMessageHandler(ctx, params)
+			chatGPTMessageHandler(ctx, client, messagesCache, ignoredChannelsCache)
 		}),
 	}
 }

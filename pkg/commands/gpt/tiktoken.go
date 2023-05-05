@@ -1,4 +1,4 @@
-package chat
+package gpt
 
 import (
 	"github.com/sashabaranov/go-openai"

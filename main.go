@@ -6,9 +6,8 @@ import (
 	"os"
 
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
-	"github.com/raikerian/go-remai-bot-discord/pkg/cache"
 	"github.com/raikerian/go-remai-bot-discord/pkg/commands"
-	"github.com/raikerian/go-remai-bot-discord/pkg/commands/chat"
+	"github.com/raikerian/go-remai-bot-discord/pkg/commands/gpt"
 	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 	"github.com/sashabaranov/go-openai"
 	"gopkg.in/yaml.v2"
@@ -47,8 +46,8 @@ var (
 	discordBot   *bot.Bot
 	openaiClient *openai.Client
 
-	gptMessagesCache      *cache.GPTMessagesCache
-	ignoredChannelsCache  = make(chat.IgnoredChannelsCache)
+	gptMessagesCache      *gpt.MessagesCache
+	ignoredChannelsCache  = make(gpt.IgnoredChannelsCache)
 	imageUploadHTTPClient *http.Client
 )
 
@@ -61,7 +60,7 @@ func main() {
 	}
 
 	// Initialize cache
-	gptMessagesCache, err = cache.NewGPTMessagesCache(constants.DiscordThreadsCacheSize)
+	gptMessagesCache, err = gpt.NewMessagesCache(constants.DiscordThreadsCacheSize)
 	if err != nil {
 		log.Fatalf("Error initializing GPTMessagesCache: %v", err)
 	}
@@ -76,11 +75,11 @@ func main() {
 	if config.OpenAI.APIKey != "" {
 		openaiClient = openai.NewClient(config.OpenAI.APIKey) // initialize OpenAI client first
 
-		discordBot.Router.Register(chat.Command(&chat.CommandParams{
-			OpenAIClient:         openaiClient,
-			GPTMessagesCache:     gptMessagesCache,
-			IgnoredChannelsCache: &ignoredChannelsCache,
-			CompletionModels:     config.OpenAI.CompletionModels,
+		discordBot.Router.Register(commands.ChatCommand(&commands.ChatCommandParams{
+			OpenAIClient:           openaiClient,
+			OpenAICompletionModels: config.OpenAI.CompletionModels,
+			GPTMessagesCache:       gptMessagesCache,
+			IgnoredChannelsCache:   &ignoredChannelsCache,
 		}))
 
 		imageUploadHTTPClient = &http.Client{Timeout: (commands.ImageHTTPRequestTimeout)}
