@@ -17,8 +17,9 @@ const (
 	// (1 hour, 1 day, 3 days, or 7 days, respectively).
 	gptDiscordThreadAutoArchivewDurationMinutes = 60
 
-	gptInteractionEmbedColor = 0x000000
-	gptPendingMessage        = "⌛ Wait a moment, please..."
+	gptInteractionEmbedColor  = 0x000000
+	gptPendingMessage         = "⌛ Wait a moment, please..."
+	gptContextOptionMaxLength = 1024 // due to discord embed field value limitation
 )
 
 func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *MessagesCache) {
@@ -133,6 +134,19 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 		log.Printf("[GID: %s, i.ID: %s] Context file provided: [AID: %s]\n", ctx.Interaction.GuildID, ctx.Interaction.ID, attachmentID)
 	} else if option, ok := ctx.Options[gptCommandOptionContext.string()]; ok {
 		context := option.StringValue()
+		if len(context) >= gptContextOptionMaxLength {
+			log.Printf("[GID: %s, i.ID: %s] User-provided context is above limit of %d characters\n", ctx.Interaction.GuildID, ctx.Interaction.ID, gptContextOptionMaxLength)
+			ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
+				Embeds: []*discord.MessageEmbed{
+					{
+						Title:       "Failed to process command",
+						Description: fmt.Sprintf("Provided context is above the limit of %d characters. Please use `context-file` option instead", gptContextOptionMaxLength),
+						Color:       0xff0000,
+					},
+				},
+			})
+			return
+		}
 		cacheItem.SystemMessage = &openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleSystem,
 			Content: context,
@@ -161,7 +175,7 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 	}
 
 	// Respond to interaction with a reference and user ping
-	ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
+	_, err = ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
 		Embeds: []*discord.MessageEmbed{
 			{
 				Description: prompt,
@@ -177,6 +191,15 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 	})
 	if err != nil {
 		log.Printf("[GID: %s, i.ID: %s] Failed to respond to interactrion with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
+		ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
+			Embeds: []*discord.MessageEmbed{
+				{
+					Title:       "Failed to process command",
+					Description: err.Error(),
+					Color:       0xff0000,
+				},
+			},
+		})
 		return
 	}
 
@@ -210,6 +233,9 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 
 	// Lock the thread while we are generating ChatGPT answser
 	utils.ToggleDiscordThreadLock(ctx.Session, thread.ID, true)
+
+	// add user to the thread
+	ctx.ThreadMemberAdd(thread.ID, ctx.Interaction.Member.User.ID)
 
 	channelMessage, err := utils.DiscordChannelMessageSend(ctx.Session, thread.ID, gptPendingMessage, nil)
 	if err != nil {
