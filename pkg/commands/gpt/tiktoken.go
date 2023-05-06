@@ -5,7 +5,49 @@ import (
 	"github.com/tiktoken-go/tokenizer"
 )
 
-func tokensConfiguration(model string) (ok bool, tokensPerMessage int, tokensPerName int) {
+func countMessageTokens(message openai.ChatCompletionMessage, model string) *int {
+	ok, tokensPerMessage, tokensPerName := _tokensConfiguration(model)
+	if !ok {
+		return nil
+	}
+
+	enc, err := tokenizer.ForModel(tokenizer.Model(model))
+	if err != nil {
+		enc, _ = tokenizer.Get(tokenizer.Cl100kBase)
+	}
+
+	tokens := _countMessageTokens(enc, tokensPerMessage, tokensPerName, message)
+	return &tokens
+}
+
+func countMessagesTokens(messages []openai.ChatCompletionMessage, model string) *int {
+	ok, tokensPerMessage, tokensPerName := _tokensConfiguration(model)
+	if !ok {
+		return nil
+	}
+
+	enc, err := tokenizer.ForModel(tokenizer.Model(model))
+	if err != nil {
+		enc, _ = tokenizer.Get(tokenizer.Cl100kBase)
+	}
+
+	tokens := 0
+	for _, message := range messages {
+		tokens += _countMessageTokens(enc, tokensPerMessage, tokensPerName, message)
+	}
+	tokens += 2 // every reply is primed with <im_start>assistant
+
+	return &tokens
+}
+
+func countAllMessagesTokens(systemMessage *openai.ChatCompletionMessage, messages []openai.ChatCompletionMessage, model string) *int {
+	if systemMessage != nil {
+		messages = append(messages, *systemMessage)
+	}
+	return countMessagesTokens(messages, model)
+}
+
+func _tokensConfiguration(model string) (ok bool, tokensPerMessage int, tokensPerName int) {
 	ok = true
 
 	switch model {
@@ -26,17 +68,7 @@ func tokensConfiguration(model string) (ok bool, tokensPerMessage int, tokensPer
 	return
 }
 
-func countMessageTokens(message openai.ChatCompletionMessage, model string) *int {
-	ok, tokensPerMessage, tokensPerName := tokensConfiguration(model)
-	if !ok {
-		return nil
-	}
-
-	enc, err := tokenizer.ForModel(tokenizer.Model(model))
-	if err != nil {
-		enc, _ = tokenizer.Get(tokenizer.Cl100kBase)
-	}
-
+func _countMessageTokens(enc tokenizer.Codec, tokensPerMessage int, tokensPerName int, message openai.ChatCompletionMessage) int {
 	tokens := tokensPerMessage
 	contentIds, _, _ := enc.Encode(message.Content)
 	roleIds, _, _ := enc.Encode(message.Role)
@@ -45,40 +77,5 @@ func countMessageTokens(message openai.ChatCompletionMessage, model string) *int
 	if message.Name != "" {
 		tokens += tokensPerName
 	}
-
-	return &tokens
-}
-
-func countMessagesTokens(messages []openai.ChatCompletionMessage, model string) *int {
-	ok, tokensPerMessage, tokensPerName := tokensConfiguration(model)
-	if !ok {
-		return nil
-	}
-
-	enc, err := tokenizer.ForModel(tokenizer.Model(model))
-	if err != nil {
-		enc, _ = tokenizer.Get(tokenizer.Cl100kBase)
-	}
-
-	tokens := 0
-	for _, message := range messages {
-		tokens += tokensPerMessage
-		contentIds, _, _ := enc.Encode(message.Content)
-		roleIds, _, _ := enc.Encode(message.Role)
-		tokens += len(contentIds)
-		tokens += len(roleIds)
-		if message.Name != "" {
-			tokens += tokensPerName
-		}
-	}
-	tokens += 2 // every reply is primed with <im_start>assistant
-
-	return &tokens
-}
-
-func countAllMessagesTokens(systemMessage *openai.ChatCompletionMessage, messages []openai.ChatCompletionMessage, model string) *int {
-	if systemMessage != nil {
-		messages = append(messages, *systemMessage)
-	}
-	return countMessagesTokens(messages, model)
+	return tokens
 }
