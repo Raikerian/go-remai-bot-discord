@@ -138,9 +138,9 @@ func parseInteractionReply(discordMessage *discord.Message) (prompt string, cont
 	return
 }
 
-func adjustMessageTokens(cacheItem *MessagesCacheData) {
+func modelTruncateLimit(model string) *int {
 	var truncateLimit int
-	switch cacheItem.Model {
+	switch model {
 	case openai.GPT3Dot5Turbo, openai.GPT3Dot5Turbo0301:
 		// gpt-3.5-turbo may change over time. Assigning truncate limit assuming gpt-3.5-turbo-0301
 		truncateLimit = gptTruncateLimitGPT3Dot5Turbo0301
@@ -152,17 +152,41 @@ func adjustMessageTokens(cacheItem *MessagesCacheData) {
 		truncateLimit = gptTruncateLimitGPT432K0314
 	default:
 		// Not implemented
+		return nil
+	}
+	return &truncateLimit
+}
+
+func adjustMessageTokens(cacheItem *MessagesCacheData) {
+	truncateLimit := modelTruncateLimit(cacheItem.Model)
+	if truncateLimit == nil {
 		return
 	}
 
-	for cacheItem.TokenCount > truncateLimit {
+	for cacheItem.TokenCount > *truncateLimit {
+		message := cacheItem.Messages[0]
 		cacheItem.Messages = cacheItem.Messages[1:]
-		tokens := countAllTokens(cacheItem.SystemMessage, cacheItem.Messages, cacheItem.Model)
-		if tokens == nil {
+		removedTokens := countMessageTokens(message, cacheItem.Model)
+		if removedTokens == nil {
 			return
 		}
-		cacheItem.TokenCount = *tokens
+		cacheItem.TokenCount -= *removedTokens
 	}
+}
+
+func isCacheItemWithinTruncateLimit(cacheItem *MessagesCacheData) (ok bool, count int) {
+	truncateLimit := modelTruncateLimit(cacheItem.Model)
+	if truncateLimit == nil {
+		return true, 0
+	}
+
+	tokens := countAllMessagesTokens(cacheItem.SystemMessage, cacheItem.Messages, cacheItem.Model)
+	if tokens == nil {
+		return true, 0
+	}
+	cacheItem.TokenCount = *tokens
+
+	return *tokens <= *truncateLimit, *tokens
 }
 
 func generateThreadTitleBasedOnInitialPrompt(ctx *bot.Context, client *openai.Client, threadID string, messages []openai.ChatCompletionMessage) {

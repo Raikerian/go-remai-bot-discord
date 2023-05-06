@@ -169,11 +169,11 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, client *openai.Client, messa
 		})
 	}
 
-	// adjust messages to fit token limit of the model
-	tokenCount := countAllTokens(cacheItem.SystemMessage, cacheItem.Messages, cacheItem.Model)
-	if tokenCount != nil {
-		cacheItem.TokenCount = *tokenCount
+	// check if current message cache is within allowed token limit
+	if ok, count := isCacheItemWithinTruncateLimit(cacheItem); !ok {
+		log.Printf("[GID: %s, CHID: %s, MID: %s] Current thread cache token count of %d exceeds truncate limit. Performing adjustments.\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, count)
 		adjustMessageTokens(cacheItem)
+		log.Printf("[GID: %s, CHID: %s, MID: %s] Tokens adjustments finished. Current cache tokens: %d\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, cacheItem.TokenCount)
 	}
 
 	// Lock the thread while we are generating ChatGPT answser

@@ -63,6 +63,13 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 		Value: "\u200B",
 	})
 
+	// Determine model
+	model := gptDefaultModel
+	if option, ok := ctx.Options[gptCommandOptionModel.string()]; ok {
+		model = option.StringValue()
+		log.Printf("[GID: %s, i.ID: %s] Model provided: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, model)
+	}
+
 	// Prepare cache item
 	cacheItem := &MessagesCacheData{
 		Messages: []openai.ChatCompletionMessage{
@@ -71,6 +78,7 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 				Content: prompt,
 			},
 		},
+		Model: model,
 	}
 
 	// Set context of the conversation as a system message. File option takes precedence
@@ -80,10 +88,11 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 
 		context, err := getContentOrURLData(ctx.Client, attachmentURL)
 		if err != nil {
+			log.Printf("[GID: %s, i.ID: %s] Failed to get context file data with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
 			ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
 				Embeds: []*discord.MessageEmbed{
 					{
-						Title:       "❌ Failed to get attachment data",
+						Title:       "Failed to get attachment data",
 						Description: err.Error(),
 						Color:       0xff0000,
 					},
@@ -95,6 +104,25 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 		cacheItem.SystemMessage = &openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleSystem,
 			Content: context,
+		}
+
+		if ok, count := isCacheItemWithinTruncateLimit(cacheItem); !ok {
+			// Message exceeds allowed token input from the user
+			truncateLimit := count
+			if limit := modelTruncateLimit(model); limit != nil {
+				truncateLimit = *limit
+			}
+			ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
+				Embeds: []*discord.MessageEmbed{
+					{
+						Title:       "Failed to process context file",
+						Description: fmt.Sprintf("Context file is `%d` tokens, which exceeds allowed token limit of `%d` for model `%s`.\nPlease provide a shorter file or use `context` option instead", count, truncateLimit, model),
+						Color:       0xff0000,
+					},
+				},
+			})
+			log.Printf("[GID: %s, i.ID: %s] User provided context file has %d tokens, which exceeds allowed token limit of `%d` for model `%s`.\n", ctx.Interaction.GuildID, ctx.Interaction.ID, count, truncateLimit, model)
+			return
 		}
 
 		fields = append(fields, &discord.MessageEmbedField{
@@ -116,12 +144,7 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 		log.Printf("[GID: %s, i.ID: %s] Context provided: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, context)
 	}
 
-	model := gptDefaultModel
-	if option, ok := ctx.Options[gptCommandOptionModel.string()]; ok {
-		model = option.StringValue()
-		log.Printf("[GID: %s, i.ID: %s] Model provided: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, model)
-	}
-	cacheItem.Model = model
+	// Add model info field after context
 	fields = append(fields, &discord.MessageEmbedField{
 		Name:  gptCommandOptionModel.humanReadableString(),
 		Value: model,
