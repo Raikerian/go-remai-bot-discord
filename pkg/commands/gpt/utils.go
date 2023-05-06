@@ -9,6 +9,7 @@ import (
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
+	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 	"github.com/raikerian/go-remai-bot-discord/pkg/utils"
 	"github.com/sashabaranov/go-openai"
 )
@@ -29,8 +30,6 @@ const (
 	gptTruncateLimitGPT40314          = 6500
 	gptTruncateLimitGPT432K0314       = 30500
 )
-
-const gptOpenAIBlackIconURL = "https://ph-files.imgix.net/b739ac93-2899-4cc1-a893-40ea8afde77e.png"
 
 func shouldHandleMessageType(t discord.MessageType) bool {
 	return t == discord.MessageTypeDefault || t == discord.MessageTypeReply
@@ -182,7 +181,7 @@ func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage,
 		{
 			Footer: &discord.MessageEmbedFooter{
 				Text:    extraInfo,
-				IconURL: gptOpenAIBlackIconURL,
+				IconURL: constants.OpenAIBlackIconURL,
 			},
 		},
 	})

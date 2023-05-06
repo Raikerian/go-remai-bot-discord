@@ -6,6 +6,7 @@ import (
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
+	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 	"github.com/raikerian/go-remai-bot-discord/pkg/utils"
 	"github.com/sashabaranov/go-openai"
 )
@@ -108,7 +109,7 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 					Author: &discord.MessageEmbedAuthor{
 						Name:         "OpenAI chat request by " + ctx.Interaction.Member.User.Username,
 						IconURL:      ctx.Interaction.Member.User.AvatarURL("32"),
-						ProxyIconURL: gptOpenAIBlackIconURL,
+						ProxyIconURL: constants.OpenAIBlackIconURL,
 					},
 					Fields: fields,
 				},

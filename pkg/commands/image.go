@@ -1,22 +1,15 @@
 package commands
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"log"
-	"net/http"
-	"strings"
-	"time"
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
-	"github.com/raikerian/go-remai-bot-discord/pkg/utils"
+	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 	"github.com/sashabaranov/go-openai"
 )
-
-const ImageHTTPRequestTimeout = 120 * time.Second
 
 const (
 	imageCommandName = "image"
@@ -28,11 +21,6 @@ const (
 	imagePriceSize512x512   = 0.018
 	imagePriceSize1024x1024 = 0.02
 )
-
-type ImageCommandParams struct {
-	OpenAIClient          *openai.Client
-	ImageUploadHTTPClient *http.Client
-}
 
 type ImageCommandOptionType uint8
 
@@ -68,7 +56,7 @@ func imageInteractionResponseMiddleware(ctx *bot.Context) {
 	ctx.Next()
 }
 
-func imageModerationMiddleware(ctx *bot.Context, params *ImageCommandParams) {
+func imageModerationMiddleware(ctx *bot.Context, client *openai.Client) {
 	log.Printf("[GID: %s, i.ID: %s] Performing interaction moderation middleware\n", ctx.Interaction.GuildID, ctx.Interaction.ID)
 
 	var prompt string
@@ -87,7 +75,7 @@ func imageModerationMiddleware(ctx *bot.Context, params *ImageCommandParams) {
 		return
 	}
 
-	resp, err := params.OpenAIClient.Moderations(
+	resp, err := client.Moderations(
 		context.Background(),
 		openai.ModerationRequest{
 			Input: prompt,
@@ -118,7 +106,7 @@ func imageModerationMiddleware(ctx *bot.Context, params *ImageCommandParams) {
 	ctx.Next()
 }
 
-func imageHandler(ctx *bot.Context, params *ImageCommandParams) {
+func imageHandler(ctx *bot.Context, client *openai.Client) {
 	var prompt string
 	if option, ok := ctx.Options[ImageCommandOptionPrompt.String()]; ok {
 		prompt = option.StringValue()
@@ -151,13 +139,13 @@ func imageHandler(ctx *bot.Context, params *ImageCommandParams) {
 	}
 
 	log.Printf("[GID: %s, CHID: %s] Dalle Request [Size: %s, Number: %d] invoked", ctx.Interaction.GuildID, ctx.Interaction.ID, size, number)
-	resp, err := params.OpenAIClient.CreateImage(
+	resp, err := client.CreateImage(
 		context.Background(),
 		openai.ImageRequest{
 			Prompt:         prompt,
 			N:              number,
 			Size:           size,
-			ResponseFormat: openai.CreateImageResponseFormatB64JSON,
+			ResponseFormat: openai.CreateImageResponseFormatURL,
 			User:           ctx.Interaction.Member.User.ID,
 		},
 	)
@@ -177,43 +165,52 @@ func imageHandler(ctx *bot.Context, params *ImageCommandParams) {
 
 	log.Printf("[GID: %s, i.ID: %s] Dalle Request [Size: %s, Number: %d] responded with a data array size %d\n", ctx.Interaction.GuildID, ctx.Interaction.ID, size, number, len(resp.Data))
 
-	var files []*discord.File
-	var errors []error
+	var embeds = []*discord.MessageEmbed{
+		{
+			URL: constants.OpenAIBlackIconURL,
+			Author: &discord.MessageEmbedAuthor{
+				Name:         prompt,
+				IconURL:      ctx.Interaction.Member.User.AvatarURL("32"),
+				ProxyIconURL: constants.OpenAIBlackIconURL,
+			},
+			Footer: imageCreationUsageEmbedFooter(size, number),
+		},
+	}
+	var buttonComponents []discord.MessageComponent
 	for i, data := range resp.Data {
-		imgBytes, err := base64.StdEncoding.DecodeString(data.B64JSON)
-		if err != nil {
-			errors = append(errors, err)
-			continue
-		}
-
-		// imagesBytes = append(imagesBytes, imgBytes)
-		files = append(files, &discord.File{
-			Name:   textToFilename(prompt, (i + 1)),
-			Reader: bytes.NewReader(imgBytes),
+		embeds = append(embeds, &discord.MessageEmbed{
+			URL: constants.OpenAIBlackIconURL,
+			Image: &discord.MessageEmbedImage{
+				URL:    data.URL,
+				Width:  256,
+				Height: 256,
+			},
+		})
+		buttonComponents = append(buttonComponents, &discord.Button{
+			Label: fmt.Sprintf("Image %d", (i + 1)),
+			Style: discord.LinkButton,
+			URL:   data.URL,
 		})
 	}
-	// only fail if all of the images failed to decode
-	if len(files) == 0 {
-		log.Printf("[GID: %s, i.ID: %s] Failed to decode Base64 image data with the errors: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, errors)
+
+	_, err = ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
+		Embeds:     embeds,
+		Components: []discord.MessageComponent{discord.ActionsRow{Components: buttonComponents}},
+	})
+	if err != nil {
+		log.Printf("[GID: %s, i.ID: %s] Failed to send a follow up message with images with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
 		ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
 			Embeds: []*discord.MessageEmbed{
 				{
-					Title:       "❌ Failed to decode Base64 image data",
-					Description: fmt.Sprintf("Errors: %v", errors),
+					Title:       "❌ Discord API Error",
+					Description: err.Error(),
 					Color:       0xff0000,
 				},
 			},
 		})
+		return
 	}
 
-	m, err := ctx.ChannelMessageSendComplex(
-		ctx.Interaction.ChannelID,
-		&discord.MessageSend{
-			Content: fmt.Sprintf("<@%s>\n> %s", ctx.Interaction.Member.User.ID, prompt),
-			Files:   files,
-		},
-		discord.WithClient(params.ImageUploadHTTPClient),
-	)
 	if err != nil {
 		log.Printf("[GID: %s, i.ID: %s] Discord API failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
 		ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
@@ -228,27 +225,6 @@ func imageHandler(ctx *bot.Context, params *ImageCommandParams) {
 		})
 		return
 	}
-
-	ctx.InteractionResponseDelete(ctx.Interaction)
-	attachCreateImageUsageInfo(ctx.Session, m, size, len(resp.Data))
-}
-
-func textToFilename(text string, n int) string {
-	// Truncate the text
-	if len(text) > imageMaxFilenameLength {
-		text = text[:imageMaxFilenameLength]
-	}
-
-	// Replace spaces with underscores
-	filename := strings.ReplaceAll(text, " ", "_")
-	filename += fmt.Sprintf("_%d", n)
-
-	// Ensure the filename ends with ".png"
-	if !strings.HasSuffix(filename, ".png") {
-		filename += ".png"
-	}
-
-	return filename
 }
 
 func priceForResponse(n int, size string) float64 {
@@ -264,25 +240,19 @@ func priceForResponse(n int, size string) float64 {
 	return 0
 }
 
-func attachCreateImageUsageInfo(s *discord.Session, m *discord.Message, size string, number int) {
+func imageCreationUsageEmbedFooter(size string, number int) *discord.MessageEmbedFooter {
 	extraInfo := fmt.Sprintf("Size: %s, Images: %d", size, number)
 	price := priceForResponse(number, size)
 	if price > 0 {
-		extraInfo += fmt.Sprintf("\nLLM Cost: $%g", price)
+		extraInfo += fmt.Sprintf("\nGeneration Cost: $%g", price)
 	}
-	utils.DiscordChannelMessageEdit(s, m.ID, m.ChannelID, nil, []*discord.MessageEmbed{
-		{
-			Fields: []*discord.MessageEmbedField{
-				{
-					Name:  "Usage",
-					Value: extraInfo,
-				},
-			},
-		},
-	})
+	return &discord.MessageEmbedFooter{
+		Text:    extraInfo,
+		IconURL: constants.OpenAIBlackIconURL,
+	}
 }
 
-func ImageCommand(params *ImageCommandParams) *bot.Command {
+func ImageCommand(client *openai.Client) *bot.Command {
 	numberOptionMinValue := 1.0
 	return &bot.Command{
 		Name:                     imageCommandName,
@@ -326,12 +296,12 @@ func ImageCommand(params *ImageCommandParams) *bot.Command {
 			},
 		},
 		Handler: bot.HandlerFunc(func(ctx *bot.Context) {
-			imageHandler(ctx, params)
+			imageHandler(ctx, client)
 		}),
 		Middlewares: []bot.Handler{
 			bot.HandlerFunc(imageInteractionResponseMiddleware),
 			bot.HandlerFunc(func(ctx *bot.Context) {
-				imageModerationMiddleware(ctx, params)
+				imageModerationMiddleware(ctx, client)
 			}),
 		},
 	}
