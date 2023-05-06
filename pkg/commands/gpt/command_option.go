@@ -19,7 +19,7 @@ func (t gptCommandOptionType) string() string {
 	case gptCommandOptionContext:
 		return "context"
 	case gptCommandOptionContextFile:
-		return "contextfile"
+		return "context-file"
 	case gptCommandOptionModel:
 		return "model"
 	case gptCommandOptionTemperature:
