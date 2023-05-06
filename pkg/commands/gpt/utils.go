@@ -3,7 +3,9 @@ package gpt
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -77,6 +79,28 @@ func sendChatGPTRequest(client *openai.Client, cacheItem *MessagesCacheData) (*c
 	}, nil
 }
 
+func getUrlData(client *http.Client, url string) (string, error) {
+	res, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+
+	defer res.Body.Close()
+	content, err := io.ReadAll(res.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return string(content), nil
+}
+
+func getContentOrURLData(client *http.Client, s string) (content string, err error) {
+	if utils.IsURL(s) {
+		content, err = getUrlData(client, s)
+	}
+	return content, err
+}
+
 func parseInteractionReply(discordMessage *discord.Message) (prompt string, context string, model string, temperature *float32) {
 	if discordMessage.Embeds == nil || len(discordMessage.Embeds) == 0 {
 		return
@@ -91,6 +115,11 @@ func parseInteractionReply(discordMessage *discord.Message) (prompt string, cont
 			case gptCommandOptionPrompt.humanReadableString():
 				prompt = field.Value
 			case gptCommandOptionContext.humanReadableString():
+				if context == "" {
+					// file context always gets precedence
+					context = field.Value
+				}
+			case gptCommandOptionContextFile.humanReadableString():
 				context = field.Value
 			case gptCommandOptionModel.humanReadableString():
 				model = field.Value

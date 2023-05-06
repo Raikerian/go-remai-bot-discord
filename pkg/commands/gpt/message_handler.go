@@ -105,6 +105,7 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, client *openai.Client, messa
 					content = prompt
 					var systemMessage *openai.ChatCompletionMessage
 					if context != "" {
+						context, _ = getContentOrURLData(ctx.Client, context)
 						systemMessage = &openai.ChatCompletionMessage{
 							Role:    openai.ChatMessageRoleSystem,
 							Content: context,

@@ -2,7 +2,6 @@ package gpt
 
 import (
 	"fmt"
-	"io"
 	"log"
 
 	discord "github.com/bwmarrin/discordgo"
@@ -77,8 +76,9 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 	// Set context of the conversation as a system message. File option takes precedence
 	if option, ok := ctx.Options[gptCommandOptionContextFile.string()]; ok {
 		attachmentID := option.Value.(string)
-		attachmentUrl := ctx.Interaction.ApplicationCommandData().Resolved.Attachments[attachmentID].URL
-		res, err := ctx.Client.Get(attachmentUrl)
+		attachmentURL := ctx.Interaction.ApplicationCommandData().Resolved.Attachments[attachmentID].URL
+
+		context, err := getContentOrURLData(ctx.Client, attachmentURL)
 		if err != nil {
 			ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
 				Embeds: []*discord.MessageEmbed{
@@ -92,29 +92,14 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 			return
 		}
 
-		defer res.Body.Close()
-		content, err := io.ReadAll(res.Body)
-		if err != nil {
-			ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
-				Embeds: []*discord.MessageEmbed{
-					{
-						Title:       "❌ Failed to read attachment content",
-						Description: err.Error(),
-						Color:       0xff0000,
-					},
-				},
-			})
-			return
-		}
-
 		cacheItem.SystemMessage = &openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleSystem,
-			Content: string(content),
+			Content: context,
 		}
 
 		fields = append(fields, &discord.MessageEmbedField{
 			Name:  gptCommandOptionContextFile.humanReadableString(),
-			Value: attachmentUrl,
+			Value: attachmentURL,
 		})
 
 		log.Printf("[GID: %s, i.ID: %s] Context file provided: [AID: %s]\n", ctx.Interaction.GuildID, ctx.Interaction.ID, attachmentID)
