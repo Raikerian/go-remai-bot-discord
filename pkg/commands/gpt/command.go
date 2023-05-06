@@ -25,6 +25,12 @@ func Command(client *openai.Client, completionModels []string, messagesCache *Me
 			Description: "Sets context that guides the AI assistant's behavior during the conversation",
 			Required:    false,
 		},
+		{
+			Type:        discord.ApplicationCommandOptionAttachment,
+			Name:        gptCommandOptionContextFile.string(),
+			Description: "File that sets context that guides the AI assistant's behavior during the conversation",
+			Required:    false,
+		},
 	}
 	numberOfModels := len(completionModels)
 	if numberOfModels > 0 {

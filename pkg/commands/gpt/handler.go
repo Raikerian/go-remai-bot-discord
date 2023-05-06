@@ -2,6 +2,7 @@ package gpt
 
 import (
 	"fmt"
+	"io"
 	"log"
 
 	discord "github.com/bwmarrin/discordgo"
@@ -31,6 +32,14 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 
 	log.Printf("[GID: %s, i.ID: %s] ChatGPT interaction invoked by UserID: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, ctx.Interaction.Member.User.ID)
 
+	err = ctx.Respond(&discord.InteractionResponse{
+		Type: discord.InteractionResponseDeferredChannelMessageWithSource,
+	})
+	if err != nil {
+		log.Printf("[GID: %s, i.ID: %s] Failed to respond to interactrion with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
+		return
+	}
+
 	var prompt string
 	if option, ok := ctx.Options[gptCommandOptionPrompt.string()]; ok {
 		prompt = option.StringValue()
@@ -38,10 +47,13 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 		// We can't have empty prompt, unfortunately
 		// this should not happen, discord prevents empty required options
 		log.Printf("[GID: %s, i.ID: %s] Failed to parse prompt option\n", ctx.Interaction.GuildID, ctx.Interaction.ID)
-		ctx.Respond(&discord.InteractionResponse{
-			Type: discord.InteractionResponseChannelMessageWithSource,
-			Data: &discord.InteractionResponseData{
-				Content: "ERROR: Failed to parse prompt option",
+		ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
+			Embeds: []*discord.MessageEmbed{
+				{
+					Title:       "❌ Error",
+					Description: "Failed to parse prompt option",
+					Color:       0xff0000,
+				},
 			},
 		})
 		return
@@ -62,8 +74,51 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 		},
 	}
 
-	// Set context of the conversation as a system message
-	if option, ok := ctx.Options[gptCommandOptionContext.string()]; ok {
+	// Set context of the conversation as a system message. File option takes precedence
+	if option, ok := ctx.Options[gptCommandOptionContextFile.string()]; ok {
+		attachmentID := option.Value.(string)
+		attachmentUrl := ctx.Interaction.ApplicationCommandData().Resolved.Attachments[attachmentID].URL
+		res, err := ctx.Client.Get(attachmentUrl)
+		if err != nil {
+			ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
+				Embeds: []*discord.MessageEmbed{
+					{
+						Title:       "❌ Failed to get attachment data",
+						Description: err.Error(),
+						Color:       0xff0000,
+					},
+				},
+			})
+			return
+		}
+
+		defer res.Body.Close()
+		content, err := io.ReadAll(res.Body)
+		if err != nil {
+			ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
+				Embeds: []*discord.MessageEmbed{
+					{
+						Title:       "❌ Failed to read attachment content",
+						Description: err.Error(),
+						Color:       0xff0000,
+					},
+				},
+			})
+			return
+		}
+
+		cacheItem.SystemMessage = &openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleSystem,
+			Content: string(content),
+		}
+
+		fields = append(fields, &discord.MessageEmbedField{
+			Name:  gptCommandOptionContextFile.humanReadableString(),
+			Value: attachmentUrl,
+		})
+
+		log.Printf("[GID: %s, i.ID: %s] Context file provided: [AID: %s]\n", ctx.Interaction.GuildID, ctx.Interaction.ID, attachmentID)
+	} else if option, ok := ctx.Options[gptCommandOptionContext.string()]; ok {
 		context := option.StringValue()
 		cacheItem.SystemMessage = &openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleSystem,
@@ -98,21 +153,17 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 	}
 
 	// Respond to interaction with a reference and user ping
-	err = ctx.Respond(&discord.InteractionResponse{
-		Type: discord.InteractionResponseChannelMessageWithSource,
-		Data: &discord.InteractionResponseData{
-			Content: fmt.Sprintf("<@%s>", ctx.Interaction.Member.User.ID),
-			Embeds: []*discord.MessageEmbed{
-				{
-					Description: prompt,
-					Color:       gptInteractionEmbedColor,
-					Author: &discord.MessageEmbedAuthor{
-						Name:         "OpenAI chat request by " + ctx.Interaction.Member.User.Username,
-						IconURL:      ctx.Interaction.Member.User.AvatarURL("32"),
-						ProxyIconURL: constants.OpenAIBlackIconURL,
-					},
-					Fields: fields,
+	ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
+		Embeds: []*discord.MessageEmbed{
+			{
+				Description: prompt,
+				Color:       gptInteractionEmbedColor,
+				Author: &discord.MessageEmbedAuthor{
+					Name:         "OpenAI chat request by " + ctx.Interaction.Member.User.Username,
+					IconURL:      ctx.Interaction.Member.User.AvatarURL("32"),
+					ProxyIconURL: constants.OpenAIBlackIconURL,
 				},
+				Fields: fields,
 			},
 		},
 	})
