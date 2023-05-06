@@ -7,8 +7,9 @@ type gptCommandOptionType uint8
 const (
 	gptCommandOptionPrompt      gptCommandOptionType = 1
 	gptCommandOptionContext     gptCommandOptionType = 2
-	gptCommandOptionModel       gptCommandOptionType = 3
-	gptCommandOptionTemperature gptCommandOptionType = 4
+	gptCommandOptionContextFile gptCommandOptionType = 3
+	gptCommandOptionModel       gptCommandOptionType = 4
+	gptCommandOptionTemperature gptCommandOptionType = 5
 )
 
 func (t gptCommandOptionType) string() string {
@@ -17,6 +18,8 @@ func (t gptCommandOptionType) string() string {
 		return "prompt"
 	case gptCommandOptionContext:
 		return "context"
+	case gptCommandOptionContextFile:
+		return "contextfile"
 	case gptCommandOptionModel:
 		return "model"
 	case gptCommandOptionTemperature:
@@ -31,6 +34,8 @@ func (t gptCommandOptionType) humanReadableString() string {
 		return "Prompt"
 	case gptCommandOptionContext:
 		return "Context"
+	case gptCommandOptionContextFile:
+		return "Context file"
 	case gptCommandOptionModel:
 		return "Model"
 	case gptCommandOptionTemperature:

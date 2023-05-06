@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"net/http"
 	"os"
 
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
@@ -46,9 +45,8 @@ var (
 	discordBot   *bot.Bot
 	openaiClient *openai.Client
 
-	gptMessagesCache      *gpt.MessagesCache
-	ignoredChannelsCache  = make(gpt.IgnoredChannelsCache)
-	imageUploadHTTPClient *http.Client
+	gptMessagesCache     *gpt.MessagesCache
+	ignoredChannelsCache = make(gpt.IgnoredChannelsCache)
 )
 
 func main() {
@@ -82,11 +80,7 @@ func main() {
 			IgnoredChannelsCache:   &ignoredChannelsCache,
 		}))
 
-		imageUploadHTTPClient = &http.Client{Timeout: (commands.ImageHTTPRequestTimeout)}
-		discordBot.Router.Register(commands.ImageCommand(&commands.ImageCommandParams{
-			OpenAIClient:          openaiClient,
-			ImageUploadHTTPClient: imageUploadHTTPClient,
-		}))
+		discordBot.Router.Register(commands.ImageCommand(openaiClient))
 	}
 	discordBot.Router.Register(commands.InfoCommand())
 

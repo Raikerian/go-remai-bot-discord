@@ -8,7 +8,7 @@ import (
 
 var gptDefaultModel = openai.GPT3Dot5Turbo
 
-const gptCommandName = "gpt"
+const commandName = "gpt"
 
 func Command(client *openai.Client, completionModels []string, messagesCache *MessagesCache, ignoredChannelsCache *IgnoredChannelsCache) *bot.Command {
 	temperatureOptionMinValue := 0.0
@@ -23,6 +23,12 @@ func Command(client *openai.Client, completionModels []string, messagesCache *Me
 			Type:        discord.ApplicationCommandOptionString,
 			Name:        gptCommandOptionContext.string(),
 			Description: "Sets context that guides the AI assistant's behavior during the conversation",
+			Required:    false,
+		},
+		{
+			Type:        discord.ApplicationCommandOptionAttachment,
+			Name:        gptCommandOptionContextFile.string(),
+			Description: "File that sets context that guides the AI assistant's behavior during the conversation",
 			Required:    false,
 		},
 	}
@@ -59,7 +65,7 @@ func Command(client *openai.Client, completionModels []string, messagesCache *Me
 		Required:    false,
 	})
 	return &bot.Command{
-		Name:        gptCommandName,
+		Name:        commandName,
 		Description: "Start conversation with ChatGPT",
 		Options:     opts,
 		Handler: bot.HandlerFunc(func(ctx *bot.Context) {

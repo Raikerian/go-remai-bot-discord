@@ -5,24 +5,24 @@ import (
 	"github.com/tiktoken-go/tokenizer"
 )
 
-func countTokens(messages []openai.ChatCompletionMessage, model string) *int {
-	var tokensPerMessage int
-	var tokensPerName int
-	switch model {
-	case openai.GPT3Dot5Turbo:
-		// gpt-3.5-turbo may change over time. Returning num tokens assuming gpt-3.5-turbo-0301
-		return countTokens(messages, openai.GPT3Dot5Turbo0301)
-	case openai.GPT4:
-		// gpt-4 may change over time. Returning num tokens assuming gpt-4-0314
-		return countTokens(messages, openai.GPT40314)
-	case openai.GPT3Dot5Turbo0301:
-		tokensPerMessage = 4 // every message follows <im_start>{role/name}\n{content}<im_end>\n
-		tokensPerName = -1   // if there's a name, the role is omitted
-	case openai.GPT40314:
-		tokensPerMessage = 3
-		tokensPerName = 1
-	default:
-		// Not implemented
+func countMessageTokens(message openai.ChatCompletionMessage, model string) *int {
+	ok, tokensPerMessage, tokensPerName := _tokensConfiguration(model)
+	if !ok {
+		return nil
+	}
+
+	enc, err := tokenizer.ForModel(tokenizer.Model(model))
+	if err != nil {
+		enc, _ = tokenizer.Get(tokenizer.Cl100kBase)
+	}
+
+	tokens := _countMessageTokens(enc, tokensPerMessage, tokensPerName, message)
+	return &tokens
+}
+
+func countMessagesTokens(messages []openai.ChatCompletionMessage, model string) *int {
+	ok, tokensPerMessage, tokensPerName := _tokensConfiguration(model)
+	if !ok {
 		return nil
 	}
 
@@ -33,23 +33,49 @@ func countTokens(messages []openai.ChatCompletionMessage, model string) *int {
 
 	tokens := 0
 	for _, message := range messages {
-		tokens += tokensPerMessage
-		contentIds, _, _ := enc.Encode(message.Content)
-		roleIds, _, _ := enc.Encode(message.Role)
-		tokens += len(contentIds)
-		tokens += len(roleIds)
-		if message.Name != "" {
-			tokens += tokensPerName
-		}
+		tokens += _countMessageTokens(enc, tokensPerMessage, tokensPerName, message)
 	}
 	tokens += 2 // every reply is primed with <im_start>assistant
 
 	return &tokens
 }
 
-func countAllTokens(systemMessage *openai.ChatCompletionMessage, messages []openai.ChatCompletionMessage, model string) *int {
+func countAllMessagesTokens(systemMessage *openai.ChatCompletionMessage, messages []openai.ChatCompletionMessage, model string) *int {
 	if systemMessage != nil {
 		messages = append(messages, *systemMessage)
 	}
-	return countTokens(messages, model)
+	return countMessagesTokens(messages, model)
+}
+
+func _tokensConfiguration(model string) (ok bool, tokensPerMessage int, tokensPerName int) {
+	ok = true
+
+	switch model {
+	case openai.GPT3Dot5Turbo, openai.GPT3Dot5Turbo0301:
+		// gpt-3.5-turbo may change over time. Returning num tokens assuming gpt-3.5-turbo-0301
+		tokensPerMessage = 4 // every message follows <im_start>{role/name}\n{content}<im_end>\n
+		tokensPerName = -1   // if there's a name, the role is omitted
+	case openai.GPT4, openai.GPT40314:
+		// gpt-4 may change over time. Returning num tokens assuming gpt-4-0314
+		tokensPerMessage = 3
+		tokensPerName = 1
+	default:
+		// Not implemented
+		ok = false
+		return
+	}
+
+	return
+}
+
+func _countMessageTokens(enc tokenizer.Codec, tokensPerMessage int, tokensPerName int, message openai.ChatCompletionMessage) int {
+	tokens := tokensPerMessage
+	contentIds, _, _ := enc.Encode(message.Content)
+	roleIds, _, _ := enc.Encode(message.Role)
+	tokens += len(contentIds)
+	tokens += len(roleIds)
+	if message.Name != "" {
+		tokens += tokensPerName
+	}
+	return tokens
 }

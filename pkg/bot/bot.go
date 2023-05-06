@@ -44,7 +44,10 @@ func (b *Bot) Run(guildID string, removeCommands bool) {
 	}
 
 	// Sync commands
-	b.Router.Sync(b.Session, guildID)
+	err = b.Router.Sync(b.Session, guildID)
+	if err != nil {
+		panic(err)
+	}
 
 	defer b.Close()
 

@@ -3,12 +3,15 @@ package gpt
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"strconv"
 	"strings"
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
+	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 	"github.com/raikerian/go-remai-bot-discord/pkg/utils"
 	"github.com/sashabaranov/go-openai"
 )
@@ -29,8 +32,6 @@ const (
 	gptTruncateLimitGPT40314          = 6500
 	gptTruncateLimitGPT432K0314       = 30500
 )
-
-const gptOpenAIBlackIconURL = "https://ph-files.imgix.net/b739ac93-2899-4cc1-a893-40ea8afde77e.png"
 
 func shouldHandleMessageType(t discord.MessageType) bool {
 	return t == discord.MessageTypeDefault || t == discord.MessageTypeReply
@@ -78,6 +79,28 @@ func sendChatGPTRequest(client *openai.Client, cacheItem *MessagesCacheData) (*c
 	}, nil
 }
 
+func getUrlData(client *http.Client, url string) (string, error) {
+	res, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+
+	defer res.Body.Close()
+	content, err := io.ReadAll(res.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return string(content), nil
+}
+
+func getContentOrURLData(client *http.Client, s string) (content string, err error) {
+	if utils.IsURL(s) {
+		content, err = getUrlData(client, s)
+	}
+	return content, err
+}
+
 func parseInteractionReply(discordMessage *discord.Message) (prompt string, context string, model string, temperature *float32) {
 	if discordMessage.Embeds == nil || len(discordMessage.Embeds) == 0 {
 		return
@@ -92,6 +115,11 @@ func parseInteractionReply(discordMessage *discord.Message) (prompt string, cont
 			case gptCommandOptionPrompt.humanReadableString():
 				prompt = field.Value
 			case gptCommandOptionContext.humanReadableString():
+				if context == "" {
+					// file context always gets precedence
+					context = field.Value
+				}
+			case gptCommandOptionContextFile.humanReadableString():
 				context = field.Value
 			case gptCommandOptionModel.humanReadableString():
 				model = field.Value
@@ -110,9 +138,9 @@ func parseInteractionReply(discordMessage *discord.Message) (prompt string, cont
 	return
 }
 
-func adjustMessageTokens(cacheItem *MessagesCacheData) {
+func modelTruncateLimit(model string) *int {
 	var truncateLimit int
-	switch cacheItem.Model {
+	switch model {
 	case openai.GPT3Dot5Turbo, openai.GPT3Dot5Turbo0301:
 		// gpt-3.5-turbo may change over time. Assigning truncate limit assuming gpt-3.5-turbo-0301
 		truncateLimit = gptTruncateLimitGPT3Dot5Turbo0301
@@ -124,17 +152,41 @@ func adjustMessageTokens(cacheItem *MessagesCacheData) {
 		truncateLimit = gptTruncateLimitGPT432K0314
 	default:
 		// Not implemented
+		return nil
+	}
+	return &truncateLimit
+}
+
+func adjustMessageTokens(cacheItem *MessagesCacheData) {
+	truncateLimit := modelTruncateLimit(cacheItem.Model)
+	if truncateLimit == nil {
 		return
 	}
 
-	for cacheItem.TokenCount > truncateLimit {
+	for cacheItem.TokenCount > *truncateLimit {
+		message := cacheItem.Messages[0]
 		cacheItem.Messages = cacheItem.Messages[1:]
-		tokens := countAllTokens(cacheItem.SystemMessage, cacheItem.Messages, cacheItem.Model)
-		if tokens == nil {
+		removedTokens := countMessageTokens(message, cacheItem.Model)
+		if removedTokens == nil {
 			return
 		}
-		cacheItem.TokenCount = *tokens
+		cacheItem.TokenCount -= *removedTokens
 	}
+}
+
+func isCacheItemWithinTruncateLimit(cacheItem *MessagesCacheData) (ok bool, count int) {
+	truncateLimit := modelTruncateLimit(cacheItem.Model)
+	if truncateLimit == nil {
+		return true, 0
+	}
+
+	tokens := countAllMessagesTokens(cacheItem.SystemMessage, cacheItem.Messages, cacheItem.Model)
+	if tokens == nil {
+		return true, 0
+	}
+	cacheItem.TokenCount = *tokens
+
+	return *tokens <= *truncateLimit, *tokens
 }
 
 func generateThreadTitleBasedOnInitialPrompt(ctx *bot.Context, client *openai.Client, threadID string, messages []openai.ChatCompletionMessage) {
@@ -182,7 +234,7 @@ func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage,
 		{
 			Footer: &discord.MessageEmbedFooter{
 				Text:    extraInfo,
-				IconURL: gptOpenAIBlackIconURL,
+				IconURL: constants.OpenAIBlackIconURL,
 			},
 		},
 	})

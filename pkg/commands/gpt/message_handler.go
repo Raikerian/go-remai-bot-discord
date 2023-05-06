@@ -2,6 +2,7 @@ package gpt
 
 import (
 	"log"
+	"time"
 
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
@@ -11,6 +12,7 @@ import (
 
 const (
 	gptDiscordChannelMessagesRequestMaxRetries = 4
+	gptDiscordTypingIndicatorCooldownSeconds   = 10
 
 	gptEmojiAck = "⌛"
 	gptEmojiErr = "❌"
@@ -105,6 +107,7 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, client *openai.Client, messa
 					content = prompt
 					var systemMessage *openai.ChatCompletionMessage
 					if context != "" {
+						context, _ = getContentOrURLData(ctx.Client, context)
 						systemMessage = &openai.ChatCompletionMessage{
 							Role:    openai.ChatMessageRoleSystem,
 							Content: context,
@@ -166,11 +169,11 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, client *openai.Client, messa
 		})
 	}
 
-	// adjust messages to fit token limit of the model
-	tokenCount := countAllTokens(cacheItem.SystemMessage, cacheItem.Messages, cacheItem.Model)
-	if tokenCount != nil {
-		cacheItem.TokenCount = *tokenCount
+	// check if current message cache is within allowed token limit
+	if ok, count := isCacheItemWithinTruncateLimit(cacheItem); !ok {
+		log.Printf("[GID: %s, CHID: %s, MID: %s] Current thread cache token count of %d exceeds truncate limit. Performing adjustments.\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, count)
 		adjustMessageTokens(cacheItem)
+		log.Printf("[GID: %s, CHID: %s, MID: %s] Tokens adjustments finished. Current cache tokens: %d\n", ctx.Message.GuildID, ctx.Message.ChannelID, ctx.Message.ID, cacheItem.TokenCount)
 	}
 
 	// Lock the thread while we are generating ChatGPT answser
@@ -180,10 +183,32 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, client *openai.Client, messa
 
 	ctx.AddReaction(gptEmojiAck)
 	defer ctx.RemoveReaction(gptEmojiAck)
+
+	// Create a ticker and a channel for signaling request completion
+	// Discord stops showing typing indicator after 10 seconds, so we
+	// need to send it again
 	ctx.ChannelTyping()
+	typingTicker := time.NewTicker(gptDiscordTypingIndicatorCooldownSeconds * time.Second)
+	done := make(chan bool)
+	go func() {
+		for {
+			select {
+			case <-typingTicker.C:
+				ctx.ChannelTyping()
+			case <-done:
+				typingTicker.Stop()
+				return
+			}
+		}
+	}()
 
 	log.Printf("[GID: %s, CHID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, cacheItem.Model, len(cacheItem.Messages))
+
 	resp, err := sendChatGPTRequest(client, cacheItem)
+
+	// Signal the typing ticker to stop
+	done <- true
+
 	if err != nil {
 		// ChatGPT failed for whatever reason, tell users about it
 		log.Printf("[GID: %s, CHID: %s] ChatGPT request ChatCompletion failed with the error: %v\n", ctx.Message.GuildID, ctx.Message.ChannelID, err)
