@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/bwmarrin/discordgo v0.27.1
 	github.com/hashicorp/golang-lru/v2 v2.0.2
-	github.com/sashabaranov/go-openai v1.7.0
+	github.com/sashabaranov/go-openai v1.9.3
 	github.com/tiktoken-go/tokenizer v0.1.0
 	gopkg.in/yaml.v2 v2.4.0
 )
