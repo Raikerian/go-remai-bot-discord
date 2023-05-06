@@ -234,6 +234,9 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 	// Lock the thread while we are generating ChatGPT answser
 	utils.ToggleDiscordThreadLock(ctx.Session, thread.ID, true)
 
+	// add user to the thread
+	ctx.ThreadMemberAdd(thread.ID, ctx.Interaction.Member.User.ID)
+
 	channelMessage, err := utils.DiscordChannelMessageSend(ctx.Session, thread.ID, gptPendingMessage, nil)
 	if err != nil {
 		// Without reply  we cannot edit message with the response of ChatGPT
