@@ -18,13 +18,17 @@ import (
 
 // See https://openai.com/pricing
 const (
-	gptPricePerTokenGPT3Dot5Turbo0301 = 0.000002
+	gptPricePerPromptTokenGPT3Dot5Turbo0613     = 0.0000015
+	gptPricePerCompletionTokenGPT3Dot5Turbo0613 = 0.000002
 
-	gptPricePerPromptTokenGPT40314     = 0.00003
-	gptPricePerCompletionTokenGPT40314 = 0.00006
+	gptPricePerPromptTokenGPT3Dot5Turbo16K0613     = 0.000003
+	gptPricePerCompletionTokenGPT3Dot5Turbo16K0613 = 0.000004
 
-	gptPricePerPromptTokenGPT432K0314     = 0.00006
-	gptPricePerCompletionTokenGPT432K0314 = 0.00012
+	gptPricePerPromptTokenGPT40613     = 0.00003
+	gptPricePerCompletionTokenGPT40613 = 0.00006
+
+	gptPricePerPromptTokenGPT432K0613     = 0.00006
+	gptPricePerCompletionTokenGPT432K0613 = 0.00012
 )
 
 const (
@@ -244,15 +248,17 @@ func generateCost(usage openai.Usage, model string) string {
 	var cost float64
 
 	switch model {
-	case openai.GPT3Dot5Turbo, openai.GPT3Dot5Turbo0301:
+	case openai.GPT3Dot5Turbo, openai.GPT3Dot5Turbo0301, openai.GPT3Dot5Turbo0613:
 		// gpt-3.5-turbo may change over time. Calculating usage assuming gpt-3.5-turbo-0301
-		cost = float64(usage.TotalTokens) * gptPricePerTokenGPT3Dot5Turbo0301
-	case openai.GPT4, openai.GPT40314:
-		// gpt-4 may change over time. Calculating usage assuming gpt-4-0314
-		cost = float64(usage.PromptTokens)*gptPricePerPromptTokenGPT40314 + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT40314
-	case openai.GPT432K, openai.GPT432K0314:
-		// gpt-4-32k may change over time. Calculating usage assuming gpt-4-32k-0314
-		cost = float64(usage.PromptTokens)*gptPricePerPromptTokenGPT432K0314 + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT432K0314
+		cost = float64(usage.PromptTokens)*gptPricePerPromptTokenGPT3Dot5Turbo0613 + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT3Dot5Turbo0613
+	case openai.GPT3Dot5Turbo16K, openai.GPT3Dot5Turbo16K0613:
+		cost = float64(usage.PromptTokens)*gptPricePerPromptTokenGPT3Dot5Turbo16K0613 + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT3Dot5Turbo16K0613
+	case openai.GPT4, openai.GPT40314, openai.GPT40613:
+		// gpt-4 may change over time. Calculating usage assuming gpt-4-0613
+		cost = float64(usage.PromptTokens)*gptPricePerPromptTokenGPT40613 + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT40613
+	case openai.GPT432K, openai.GPT432K0314, openai.GPT432K0613:
+		// gpt-4-32k may change over time. Calculating usage assuming gpt-4-32k-0613
+		cost = float64(usage.PromptTokens)*gptPricePerPromptTokenGPT432K0613 + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT432K0613
 	default:
 		// Not implemented
 		return ""
