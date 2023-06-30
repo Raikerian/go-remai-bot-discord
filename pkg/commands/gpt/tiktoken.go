@@ -35,7 +35,7 @@ func countMessagesTokens(messages []openai.ChatCompletionMessage, model string) 
 	for _, message := range messages {
 		tokens += _countMessageTokens(enc, tokensPerMessage, tokensPerName, message)
 	}
-	tokens += 2 // every reply is primed with <im_start>assistant
+	tokens += 3 // every reply is primed with <im_start>assistant
 
 	return &tokens
 }
@@ -51,12 +51,18 @@ func _tokensConfiguration(model string) (ok bool, tokensPerMessage int, tokensPe
 	ok = true
 
 	switch model {
-	case openai.GPT3Dot5Turbo, openai.GPT3Dot5Turbo0301:
-		// gpt-3.5-turbo may change over time. Returning num tokens assuming gpt-3.5-turbo-0301
+	case openai.GPT3Dot5Turbo0301:
 		tokensPerMessage = 4 // every message follows <im_start>{role/name}\n{content}<im_end>\n
 		tokensPerName = -1   // if there's a name, the role is omitted
-	case openai.GPT4, openai.GPT40314:
-		// gpt-4 may change over time. Returning num tokens assuming gpt-4-0314
+	case openai.GPT3Dot5Turbo,
+		openai.GPT3Dot5Turbo0613,
+		openai.GPT3Dot5Turbo16K,
+		openai.GPT3Dot5Turbo16K0613,
+		openai.GPT4,
+		openai.GPT40314,
+		openai.GPT40613,
+		openai.GPT432K0314,
+		openai.GPT432K0613:
 		tokensPerMessage = 3
 		tokensPerName = 1
 	default:
@@ -76,6 +82,8 @@ func _countMessageTokens(enc tokenizer.Codec, tokensPerMessage int, tokensPerNam
 	tokens += len(roleIds)
 	if message.Name != "" {
 		tokens += tokensPerName
+		nameIds, _, _ := enc.Encode(message.Name)
+		tokens += len(nameIds)
 	}
 	return tokens
 }
