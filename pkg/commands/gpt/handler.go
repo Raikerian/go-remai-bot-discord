@@ -174,6 +174,11 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 		log.Printf("[GID: %s, i.ID: %s] Temperature provided: %g\n", ctx.Interaction.GuildID, ctx.Interaction.ID, temp)
 	}
 
+	if option, ok := ctx.Options[gptCommandOptionGoogle.string()]; ok {
+		cacheItem.GoogleSearch = option.BoolValue()
+		log.Printf("[GID: %s, i.ID: %s] Google search feature: %t\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.GoogleSearch)
+	}
+
 	// Respond to interaction with a reference and user ping
 	_, err = ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
 		Embeds: []*discord.MessageEmbed{
@@ -248,7 +253,15 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 	messagesCache.Add(thread.ID, cacheItem)
 
 	log.Printf("[GID: %s, i.ID: %s] ChatGPT Request invoked with [Model: %s]. Current cache size: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, cacheItem.Model, len(cacheItem.Messages))
-	resp, err := sendChatGPTRequest(client, cacheItem)
+	// resp, err := sendChatGPTRequest(client, cacheItem)
+
+	var resp *chatGPTResponse
+	if cacheItem.GoogleSearch {
+		resp, err = sendChatGPTRequest(client, cacheItem, googleSearchGPTFunction())
+	} else {
+		resp, err = sendChatGPTRequest(client, cacheItem)
+	}
+
 	if err != nil {
 		// ChatGPT failed for whatever reason, tell users about it
 		log.Printf("[GID: %s, i.ID: %s] OpenAI request ChatCompletion failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)

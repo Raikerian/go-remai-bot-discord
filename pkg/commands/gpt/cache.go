@@ -17,6 +17,7 @@ type MessagesCacheData struct {
 	Model         string
 	Temperature   *float32
 	TokenCount    int
+	GoogleSearch  bool
 }
 
 func NewMessagesCache(size int) (*MessagesCache, error) {

@@ -3,6 +3,7 @@ package gpt
 import (
 	discord "github.com/bwmarrin/discordgo"
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
+	"github.com/raikerian/go-remai-bot-discord/pkg/client"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -10,7 +11,7 @@ var gptDefaultModel = openai.GPT3Dot5Turbo
 
 const commandName = "gpt"
 
-func Command(client *openai.Client, completionModels []string, messagesCache *MessagesCache, ignoredChannelsCache *IgnoredChannelsCache) *bot.Command {
+func Command(client *openai.Client, completionModels []string, messagesCache *MessagesCache, ignoredChannelsCache *IgnoredChannelsCache, gClient *client.GoogleSearch) *bot.Command {
 	temperatureOptionMinValue := 0.0
 	opts := []*discord.ApplicationCommandOption{
 		{
@@ -62,6 +63,12 @@ func Command(client *openai.Client, completionModels []string, messagesCache *Me
 		Description: "What sampling temperature to use, between 0.0 and 2.0. Lower - more focused and deterministic",
 		MinValue:    &temperatureOptionMinValue,
 		MaxValue:    2.0,
+		Required:    false,
+	})
+	opts = append(opts, &discord.ApplicationCommandOption{
+		Type:        discord.ApplicationCommandOptionBoolean,
+		Name:        gptCommandOptionGoogle.string(),
+		Description: "Enable google search for when bot doesn't know something",
 		Required:    false,
 	})
 	return &bot.Command{

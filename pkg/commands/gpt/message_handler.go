@@ -99,7 +99,7 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, client *openai.Client, messa
 					}
 					role = openai.ChatMessageRoleUser
 
-					prompt, context, model, temperature := parseInteractionReply(value.ReferencedMessage)
+					prompt, context, model, temperature, googleSearch := parseInteractionReply(value.ReferencedMessage)
 					if prompt == "" {
 						isGPTThread = false
 						break
@@ -122,6 +122,7 @@ func chatGPTMessageHandler(ctx *bot.MessageContext, client *openai.Client, messa
 
 					cacheItem.SystemMessage = systemMessage
 					cacheItem.Model = model
+					cacheItem.GoogleSearch = googleSearch
 				} else if !shouldHandleMessageType(value.Type) {
 					// ignore message types that are
 					// not related to conversation

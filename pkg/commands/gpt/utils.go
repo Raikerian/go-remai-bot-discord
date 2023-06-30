@@ -37,48 +37,6 @@ func shouldHandleMessageType(t discord.MessageType) bool {
 	return t == discord.MessageTypeDefault || t == discord.MessageTypeReply
 }
 
-type chatGPTResponse struct {
-	content string
-	usage   openai.Usage
-}
-
-func sendChatGPTRequest(client *openai.Client, cacheItem *MessagesCacheData) (*chatGPTResponse, error) {
-	// Create message with ChatGPT
-	messages := cacheItem.Messages
-	if cacheItem.SystemMessage != nil {
-		messages = append([]openai.ChatCompletionMessage{*cacheItem.SystemMessage}, messages...)
-	}
-
-	req := openai.ChatCompletionRequest{
-		Model:    cacheItem.Model,
-		Messages: messages,
-	}
-
-	if cacheItem.Temperature != nil {
-		req.Temperature = *cacheItem.Temperature
-	}
-
-	resp, err := client.CreateChatCompletion(
-		context.Background(),
-		req,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Save response to context cache
-	responseContent := resp.Choices[0].Message.Content
-	cacheItem.Messages = append(cacheItem.Messages, openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleAssistant,
-		Content: responseContent,
-	})
-	cacheItem.TokenCount = resp.Usage.TotalTokens
-	return &chatGPTResponse{
-		content: responseContent,
-		usage:   resp.Usage,
-	}, nil
-}
-
 func getUrlData(client *http.Client, url string) (string, error) {
 	res, err := client.Get(url)
 	if err != nil {
@@ -101,7 +59,7 @@ func getContentOrURLData(client *http.Client, s string) (content string, err err
 	return content, err
 }
 
-func parseInteractionReply(discordMessage *discord.Message) (prompt string, context string, model string, temperature *float32) {
+func parseInteractionReply(discordMessage *discord.Message) (prompt string, context string, model string, temperature *float32, googleSearch bool) {
 	if discordMessage.Embeds == nil || len(discordMessage.Embeds) == 0 {
 		return
 	}
@@ -131,6 +89,13 @@ func parseInteractionReply(discordMessage *discord.Message) (prompt string, cont
 				}
 				temp := float32(parsedValue)
 				temperature = &temp
+			case gptCommandOptionGoogle.humanReadableString():
+				var err error
+				googleSearch, err = strconv.ParseBool(field.Value)
+				if err != nil {
+					log.Printf("[GID: %s, CHID: %s, MID: %s] Failed to parse google search value from the message with the error: %v\n", discordMessage.GuildID, discordMessage.ChannelID, discordMessage.ID, err)
+					continue
+				}
 			}
 		}
 	}

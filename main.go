@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/raikerian/go-remai-bot-discord/pkg/bot"
+	"github.com/raikerian/go-remai-bot-discord/pkg/client"
 	"github.com/raikerian/go-remai-bot-discord/pkg/commands"
 	"github.com/raikerian/go-remai-bot-discord/pkg/commands/gpt"
 	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
@@ -22,6 +23,7 @@ type Config struct {
 		APIKey           string   `yaml:"apiKey"`
 		CompletionModels []string `yaml:"completionModels"`
 	} `yaml:"openAI"`
+	SerperAPIKey string `yaml:"serperAPIKey"`
 }
 
 func (c *Config) ReadFromFile(file string) error {
@@ -72,12 +74,14 @@ func main() {
 	// Register commands
 	if config.OpenAI.APIKey != "" {
 		openaiClient = openai.NewClient(config.OpenAI.APIKey) // initialize OpenAI client first
+		gClient := client.NewGoogleSearch(config.SerperAPIKey)
 
 		discordBot.Router.Register(commands.ChatCommand(&commands.ChatCommandParams{
 			OpenAIClient:           openaiClient,
 			OpenAICompletionModels: config.OpenAI.CompletionModels,
 			GPTMessagesCache:       gptMessagesCache,
 			IgnoredChannelsCache:   &ignoredChannelsCache,
+			GoogleSearchClient:     gClient,
 		}))
 
 		discordBot.Router.Register(commands.ImageCommand(openaiClient))

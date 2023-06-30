@@ -10,6 +10,7 @@ const (
 	gptCommandOptionContextFile gptCommandOptionType = 3
 	gptCommandOptionModel       gptCommandOptionType = 4
 	gptCommandOptionTemperature gptCommandOptionType = 5
+	gptCommandOptionGoogle      gptCommandOptionType = 6
 )
 
 func (t gptCommandOptionType) string() string {
@@ -24,6 +25,8 @@ func (t gptCommandOptionType) string() string {
 		return "model"
 	case gptCommandOptionTemperature:
 		return "temperature"
+	case gptCommandOptionGoogle:
+		return "google"
 	}
 	return fmt.Sprintf("ApplicationCommandOptionType(%d)", t)
 }
@@ -40,6 +43,8 @@ func (t gptCommandOptionType) humanReadableString() string {
 		return "Model"
 	case gptCommandOptionTemperature:
 		return "Temperature"
+	case gptCommandOptionGoogle:
+		return "Google"
 	}
 	return fmt.Sprintf("ApplicationCommandOptionType(%d)", t)
 }
