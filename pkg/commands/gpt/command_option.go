@@ -12,7 +12,7 @@ const (
 	gptCommandOptionTemperature gptCommandOptionType = 5
 )
 
-func (t gptCommandOptionType) string() string {
+func (t gptCommandOptionType) String() string {
 	switch t {
 	case gptCommandOptionPrompt:
 		return "prompt"

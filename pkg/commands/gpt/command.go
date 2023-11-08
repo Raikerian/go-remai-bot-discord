@@ -15,19 +15,19 @@ func Command(client *openai.Client, completionModels []string, messagesCache *Me
 	opts := []*discord.ApplicationCommandOption{
 		{
 			Type:        discord.ApplicationCommandOptionString,
-			Name:        gptCommandOptionPrompt.string(),
+			Name:        gptCommandOptionPrompt.String(),
 			Description: "ChatGPT prompt",
 			Required:    true,
 		},
 		{
 			Type:        discord.ApplicationCommandOptionString,
-			Name:        gptCommandOptionContext.string(),
+			Name:        gptCommandOptionContext.String(),
 			Description: "Sets context that guides the AI assistant's behavior during the conversation",
 			Required:    false,
 		},
 		{
 			Type:        discord.ApplicationCommandOptionAttachment,
-			Name:        gptCommandOptionContextFile.string(),
+			Name:        gptCommandOptionContextFile.String(),
 			Description: "File that sets context that guides the AI assistant's behavior during the conversation",
 			Required:    false,
 		},
@@ -50,7 +50,7 @@ func Command(client *openai.Client, completionModels []string, messagesCache *Me
 		}
 		opts = append(opts, &discord.ApplicationCommandOption{
 			Type:        discord.ApplicationCommandOptionString,
-			Name:        gptCommandOptionModel.string(),
+			Name:        gptCommandOptionModel.String(),
 			Description: "GPT model",
 			Required:    false,
 			Choices:     modelChoices,
@@ -58,7 +58,7 @@ func Command(client *openai.Client, completionModels []string, messagesCache *Me
 	}
 	opts = append(opts, &discord.ApplicationCommandOption{
 		Type:        discord.ApplicationCommandOptionNumber,
-		Name:        gptCommandOptionTemperature.string(),
+		Name:        gptCommandOptionTemperature.String(),
 		Description: "What sampling temperature to use, between 0.0 and 2.0. Lower - more focused and deterministic",
 		MinValue:    &temperatureOptionMinValue,
 		MaxValue:    2.0,

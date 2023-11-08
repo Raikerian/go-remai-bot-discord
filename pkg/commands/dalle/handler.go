@@ -11,6 +11,12 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
+const (
+	dalleDefaultModel   = openai.CreateImageModelDallE3
+	dalleDefaultQuality = openai.CreateImageQualityStandard
+	dalleDefaultStyle   = openai.CreateImageStyleNatural
+)
+
 func imageHandler(ctx *bot.Context, client *openai.Client) {
 	var prompt string
 	if option, ok := ctx.Options[imageCommandOptionPrompt.String()]; ok {
@@ -31,6 +37,13 @@ func imageHandler(ctx *bot.Context, client *openai.Client) {
 		return
 	}
 
+	// Determine model
+	model := dalleDefaultModel
+	if option, ok := ctx.Options[imageCommandOptionModel.String()]; ok {
+		model = option.StringValue()
+		log.Printf("[GID: %s, i.ID: %s] Model provided: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, model)
+	}
+
 	size := imageDefaultSize
 	if option, ok := ctx.Options[imageCommandOptionSize.String()]; ok {
 		size = option.StringValue()
@@ -43,13 +56,32 @@ func imageHandler(ctx *bot.Context, client *openai.Client) {
 		log.Printf("[GID: %s, i.ID: %s] Image number provided: %d\n", ctx.Interaction.GuildID, ctx.Interaction.ID, number)
 	}
 
+	quality := dalleDefaultQuality
+	if option, ok := ctx.Options[imageCommandOptionQuality.String()]; ok {
+		quality = option.StringValue()
+		log.Printf("[GID: %s, i.ID: %s] Image quality provided: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, quality)
+	}
+	style := dalleDefaultStyle
+	if option, ok := ctx.Options[imageCommandOptionStyle.String()]; ok {
+		style = option.StringValue()
+		log.Printf("[GID: %s, i.ID: %s] Image style provided: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, style)
+	}
+	// quality and style dall-e 3 only
+	if model == openai.CreateImageModelDallE2 {
+		quality = ""
+		style = ""
+	}
+
 	log.Printf("[GID: %s, CHID: %s] Dalle Request [Size: %s, Number: %d] invoked", ctx.Interaction.GuildID, ctx.Interaction.ID, size, number)
 	resp, err := client.CreateImage(
 		context.Background(),
 		openai.ImageRequest{
 			Prompt:         prompt,
+			Model:          model,
 			N:              number,
+			Quality:        quality,
 			Size:           size,
+			Style:          style,
 			ResponseFormat: openai.CreateImageResponseFormatURL,
 			User:           ctx.Interaction.Member.User.ID,
 		},
@@ -78,17 +110,18 @@ func imageHandler(ctx *bot.Context, client *openai.Client) {
 				IconURL:      ctx.Interaction.Member.User.AvatarURL("32"),
 				ProxyIconURL: constants.OpenAIBlackIconURL,
 			},
-			Footer: imageCreationUsageEmbedFooter(size, number),
+			Footer: imageCreationUsageEmbedFooter(model, size, number, quality),
 		},
 	}
 	var buttonComponents []discord.MessageComponent
+	w, h := imageSizeToWidthHeight(size)
 	for i, data := range resp.Data {
 		embeds = append(embeds, &discord.MessageEmbed{
 			URL: constants.OpenAIBlackIconURL,
 			Image: &discord.MessageEmbedImage{
 				URL:    data.URL,
-				Width:  256,
-				Height: 256,
+				Width:  w,
+				Height: h,
 			},
 		})
 		buttonComponents = append(buttonComponents, &discord.Button{
