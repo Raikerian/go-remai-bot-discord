@@ -41,7 +41,7 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 	}
 
 	var prompt string
-	if option, ok := ctx.Options[gptCommandOptionPrompt.string()]; ok {
+	if option, ok := ctx.Options[gptCommandOptionPrompt.String()]; ok {
 		prompt = option.StringValue()
 	} else {
 		// We can't have empty prompt, unfortunately
@@ -66,7 +66,7 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 
 	// Determine model
 	model := gptDefaultModel
-	if option, ok := ctx.Options[gptCommandOptionModel.string()]; ok {
+	if option, ok := ctx.Options[gptCommandOptionModel.String()]; ok {
 		model = option.StringValue()
 		log.Printf("[GID: %s, i.ID: %s] Model provided: %s\n", ctx.Interaction.GuildID, ctx.Interaction.ID, model)
 	}
@@ -83,7 +83,7 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 	}
 
 	// Set context of the conversation as a system message. File option takes precedence
-	if option, ok := ctx.Options[gptCommandOptionContextFile.string()]; ok {
+	if option, ok := ctx.Options[gptCommandOptionContextFile.String()]; ok {
 		attachmentID := option.Value.(string)
 		attachmentURL := ctx.Interaction.ApplicationCommandData().Resolved.Attachments[attachmentID].URL
 
@@ -132,7 +132,7 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 		})
 
 		log.Printf("[GID: %s, i.ID: %s] Context file provided: [AID: %s]\n", ctx.Interaction.GuildID, ctx.Interaction.ID, attachmentID)
-	} else if option, ok := ctx.Options[gptCommandOptionContext.string()]; ok {
+	} else if option, ok := ctx.Options[gptCommandOptionContext.String()]; ok {
 		context := option.StringValue()
 		if len(context) >= gptContextOptionMaxLength {
 			log.Printf("[GID: %s, i.ID: %s] User-provided context is above limit of %d characters\n", ctx.Interaction.GuildID, ctx.Interaction.ID, gptContextOptionMaxLength)
@@ -164,7 +164,7 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 		Value: model,
 	})
 
-	if option, ok := ctx.Options[gptCommandOptionTemperature.string()]; ok {
+	if option, ok := ctx.Options[gptCommandOptionTemperature.String()]; ok {
 		temp := float32(option.FloatValue())
 		cacheItem.Temperature = &temp
 		fields = append(fields, &discord.MessageEmbedField{
