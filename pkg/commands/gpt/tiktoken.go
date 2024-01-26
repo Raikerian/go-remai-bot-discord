@@ -1,6 +1,7 @@
 package gpt
 
 import (
+	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 	"github.com/sashabaranov/go-openai"
 	"github.com/tiktoken-go/tokenizer"
 )
@@ -54,15 +55,7 @@ func _tokensConfiguration(model string) (ok bool, tokensPerMessage int, tokensPe
 	case openai.GPT3Dot5Turbo0301:
 		tokensPerMessage = 4 // every message follows <im_start>{role/name}\n{content}<im_end>\n
 		tokensPerName = -1   // if there's a name, the role is omitted
-	case openai.GPT3Dot5Turbo,
-		openai.GPT3Dot5Turbo0613,
-		openai.GPT3Dot5Turbo16K,
-		openai.GPT3Dot5Turbo16K0613,
-		openai.GPT4,
-		openai.GPT40314,
-		openai.GPT40613,
-		openai.GPT432K0314,
-		openai.GPT432K0613:
+	case openai.GPT3Dot5Turbo16K, constants.GPT4TurboPreview:
 		tokensPerMessage = 3
 		tokensPerName = 1
 	default:
