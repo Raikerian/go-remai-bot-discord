@@ -127,7 +127,10 @@ func imageHandler(ctx *bot.Context, client *openai.Client) {
 		buttonComponents = append(buttonComponents, &discord.Button{
 			Label: fmt.Sprintf("Image %d", (i + 1)),
 			Style: discord.LinkButton,
-			URL:   data.URL,
+			Emoji: discord.ComponentEmoji{
+				Name: "🔗",
+			},
+			URL: data.URL,
 		})
 	}
 

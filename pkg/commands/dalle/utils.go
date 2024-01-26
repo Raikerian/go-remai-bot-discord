@@ -49,7 +49,8 @@ func priceForResponse(n int, size, model, quality string) float64 {
 }
 
 func imageCreationUsageEmbedFooter(model string, size string, number int, quality string) *discord.MessageEmbedFooter {
-	extraInfo := fmt.Sprintf("Size: %s", size)
+	extraInfo := fmt.Sprintf("Model: %s", model)
+	extraInfo += fmt.Sprintf("\nSize: %s", size)
 	if model == openai.CreateImageModelDallE2 && number > 1 {
 		extraInfo += fmt.Sprintf(", Images: %d", number)
 	}
