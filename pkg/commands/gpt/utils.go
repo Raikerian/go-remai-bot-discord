@@ -18,24 +18,16 @@ import (
 
 // See https://openai.com/pricing
 const (
-	gptPricePerPromptTokenGPT3Dot5Turbo     = 0.000001
-	gptPricePerCompletionTokenGPT3Dot5Turbo = 0.000002
+	gptPricePerPromptTokenGPT3Dot5Turbo16K     = 0.000001
+	gptPricePerCompletionTokenGPT3Dot5Turbo16K = 0.000002
 
-	gptPricePerPromptTokenGPT4TurboPreview     = 0.00001
-	gptPricePerCompletionTokenGPT4TurboPreview = 0.00003
-
-	gptPricePerPromptTokenGPT4     = 0.00003
-	gptPricePerCompletionTokenGPT4 = 0.00006
-
-	gptPricePerPromptTokenGPT432K     = 0.00006
-	gptPricePerCompletionTokenGPT432K = 0.00012
+	gptPricePerPromptTokenGPT4Turbo     = 0.00001
+	gptPricePerCompletionTokenGPT4Turbo = 0.00003
 )
 
 const (
-	gptTruncateLimitGPT3Dot5Turbo1106 = 14000
-	gptTruncateLimitGPT4TurboPreview  = 120000
-	gptTruncateLimitGPT4              = 6500
-	gptTruncateLimitGPT432K           = 30500
+	gptTruncateLimitGPT3Dot5Turbo16K = 14000
+	gptTruncateLimitGPT4Turbo        = 20000
 )
 
 func shouldHandleMessageType(t discord.MessageType) bool {
@@ -146,14 +138,10 @@ func parseInteractionReply(discordMessage *discord.Message) (prompt string, cont
 func modelTruncateLimit(model string) *int {
 	var truncateLimit int
 	switch model {
-	case openai.GPT3Dot5Turbo1106:
-		truncateLimit = gptTruncateLimitGPT3Dot5Turbo1106
-	case openai.GPT4TurboPreview:
-		truncateLimit = gptTruncateLimitGPT4TurboPreview
-	case openai.GPT4:
-		truncateLimit = gptTruncateLimitGPT4
-	case openai.GPT432K:
-		truncateLimit = gptTruncateLimitGPT432K
+	case openai.GPT3Dot5Turbo16K:
+		truncateLimit = gptTruncateLimitGPT3Dot5Turbo16K
+	case constants.GPT4TurboPreview:
+		truncateLimit = gptTruncateLimitGPT4Turbo
 	default:
 		// Not implemented
 		return nil
@@ -248,14 +236,10 @@ func generateCost(usage openai.Usage, model string) string {
 	var cost float64
 
 	switch model {
-	case openai.GPT3Dot5Turbo1106:
-		cost = float64(usage.PromptTokens)*gptPricePerPromptTokenGPT3Dot5Turbo + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT3Dot5Turbo
-	case openai.GPT4:
-		cost = float64(usage.PromptTokens)*gptPricePerPromptTokenGPT4 + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT4
-	case openai.GPT4TurboPreview:
-		cost = float64(usage.PromptTokens)*gptPricePerPromptTokenGPT4TurboPreview + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT4TurboPreview
-	case openai.GPT432K:
-		cost = float64(usage.PromptTokens)*gptPricePerPromptTokenGPT432K + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT432K
+	case openai.GPT3Dot5Turbo16K:
+		cost = float64(usage.PromptTokens)*gptPricePerPromptTokenGPT3Dot5Turbo16K + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT3Dot5Turbo16K
+	case constants.GPT4TurboPreview:
+		cost = float64(usage.PromptTokens)*gptPricePerPromptTokenGPT4Turbo + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT4Turbo
 	default:
 		// Not implemented
 		return ""
