@@ -127,7 +127,7 @@ func imageHandler(ctx *bot.Context, client *openai.Client) {
 		buttonComponents = append(buttonComponents, &discord.Button{
 			Label: fmt.Sprintf("Image %d", (i + 1)),
 			Style: discord.LinkButton,
-			Emoji: discord.ComponentEmoji{
+			Emoji: &discord.ComponentEmoji{
 				Name: "🔗",
 			},
 			URL: data.URL,
@@ -141,20 +141,6 @@ func imageHandler(ctx *bot.Context, client *openai.Client) {
 	if err != nil {
 		log.Printf("[GID: %s, i.ID: %s] Failed to send a follow up message with images with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
 		ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
-			Embeds: []*discord.MessageEmbed{
-				{
-					Title:       "❌ Discord API Error",
-					Description: err.Error(),
-					Color:       0xff0000,
-				},
-			},
-		})
-		return
-	}
-
-	if err != nil {
-		log.Printf("[GID: %s, i.ID: %s] Discord API failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
-		ctx.FollowupMessageCreate(ctx.Interaction, true, &discord.WebhookParams{
 			Content: fmt.Sprintf("> %s", prompt),
 			Embeds: []*discord.MessageEmbed{
 				{
@@ -164,6 +150,5 @@ func imageHandler(ctx *bot.Context, client *openai.Client) {
 				},
 			},
 		})
-		return
 	}
 }

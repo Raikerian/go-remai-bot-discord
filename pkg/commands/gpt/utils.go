@@ -23,11 +23,14 @@ const (
 
 	gptPricePerPromptTokenGPT4Turbo     = 0.00001
 	gptPricePerCompletionTokenGPT4Turbo = 0.00003
+
+	gptPricePerPromptTokenGPT4o     = 0.000005
+	gptPricePerCompletionTokenGPT4o = 0.000015
 )
 
 const (
 	gptTruncateLimitGPT3Dot5Turbo16K = 14000
-	gptTruncateLimitGPT4Turbo        = 20000
+	gptTruncateLimitGPT4             = 20000
 )
 
 func shouldHandleMessageType(t discord.MessageType) bool {
@@ -140,8 +143,8 @@ func modelTruncateLimit(model string) *int {
 	switch model {
 	case openai.GPT3Dot5Turbo16K:
 		truncateLimit = gptTruncateLimitGPT3Dot5Turbo16K
-	case constants.GPT4TurboPreview:
-		truncateLimit = gptTruncateLimitGPT4Turbo
+	case openai.GPT4o, openai.GPT4o20240513, openai.GPT4Turbo, openai.GPT4Turbo20240409, openai.GPT4Turbo0125, openai.GPT4Turbo1106, openai.GPT4TurboPreview:
+		truncateLimit = gptTruncateLimitGPT4
 	default:
 		// Not implemented
 		return nil
@@ -222,7 +225,7 @@ func generateThreadTitleBasedOnInitialPrompt(ctx *bot.Context, client *openai.Cl
 func attachUsageInfo(s *discord.Session, m *discord.Message, usage openai.Usage, model string) {
 	extraInfo := fmt.Sprintf("Completion Tokens: %d, Total: %d%s", usage.CompletionTokens, usage.TotalTokens, generateCost(usage, model))
 
-	utils.DiscordChannelMessageEdit(s, m.ID, m.ChannelID, nil, []*discord.MessageEmbed{
+	utils.DiscordChannelMessageEdit(s, m.ID, m.ChannelID, nil, &[]*discord.MessageEmbed{
 		{
 			Footer: &discord.MessageEmbedFooter{
 				Text:    extraInfo,
@@ -238,8 +241,10 @@ func generateCost(usage openai.Usage, model string) string {
 	switch model {
 	case openai.GPT3Dot5Turbo16K:
 		cost = float64(usage.PromptTokens)*gptPricePerPromptTokenGPT3Dot5Turbo16K + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT3Dot5Turbo16K
-	case constants.GPT4TurboPreview:
+	case openai.GPT4Turbo, openai.GPT4Turbo20240409, openai.GPT4Turbo0125, openai.GPT4Turbo1106, openai.GPT4TurboPreview:
 		cost = float64(usage.PromptTokens)*gptPricePerPromptTokenGPT4Turbo + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT4Turbo
+	case openai.GPT4o, openai.GPT4o20240513:
+		cost = float64(usage.PromptTokens)*gptPricePerPromptTokenGPT4o + float64(usage.CompletionTokens)*gptPricePerCompletionTokenGPT4o
 	default:
 		// Not implemented
 		return ""

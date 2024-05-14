@@ -253,7 +253,7 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 		// ChatGPT failed for whatever reason, tell users about it
 		log.Printf("[GID: %s, i.ID: %s] OpenAI request ChatCompletion failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
 		emptyString := ""
-		utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &emptyString, []*discord.MessageEmbed{
+		utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &emptyString, &[]*discord.MessageEmbed{
 			{
 				Title:       "❌ OpenAI API failed",
 				Description: err.Error(),
@@ -275,7 +275,7 @@ func chatGPTHandler(ctx *bot.Context, client *openai.Client, messagesCache *Mess
 	if err != nil {
 		log.Printf("[GID: %s, i.ID: %s] Discord API failed with the error: %v\n", ctx.Interaction.GuildID, ctx.Interaction.ID, err)
 		emptyString := ""
-		utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &emptyString, []*discord.MessageEmbed{
+		utils.DiscordChannelMessageEdit(ctx.Session, channelMessage.ID, channelMessage.ChannelID, &emptyString, &[]*discord.MessageEmbed{
 			{
 				Title:       "❌ Discord API Error",
 				Description: err.Error(),
