@@ -26,7 +26,7 @@ func DiscordChannelMessageSend(s *discord.Session, channelID string, content str
 	return
 }
 
-func DiscordChannelMessageEdit(s *discord.Session, messageID string, channelID string, content *string, embeds []*discord.MessageEmbed) error {
+func DiscordChannelMessageEdit(s *discord.Session, messageID string, channelID string, content *string, embeds *[]*discord.MessageEmbed) error {
 	_, err := s.ChannelMessageEditComplex(
 		&discord.MessageEdit{
 			Content: content,

@@ -1,17 +1,16 @@
 package gpt
 
 import (
-	"github.com/raikerian/go-remai-bot-discord/pkg/constants"
 	"github.com/sashabaranov/go-openai"
 	"github.com/tiktoken-go/tokenizer"
 )
 
-func countMessageTokens(message openai.ChatCompletionMessage, model string) *int {
-	ok, tokensPerMessage, tokensPerName := _tokensConfiguration(model)
-	if !ok {
-		return nil
-	}
+const (
+	tokensPerMessage = 3
+	tokensPerName    = 1
+)
 
+func countMessageTokens(message openai.ChatCompletionMessage, model string) *int {
 	enc, err := tokenizer.ForModel(tokenizer.Model(model))
 	if err != nil {
 		enc, _ = tokenizer.Get(tokenizer.Cl100kBase)
@@ -22,11 +21,6 @@ func countMessageTokens(message openai.ChatCompletionMessage, model string) *int
 }
 
 func countMessagesTokens(messages []openai.ChatCompletionMessage, model string) *int {
-	ok, tokensPerMessage, tokensPerName := _tokensConfiguration(model)
-	if !ok {
-		return nil
-	}
-
 	enc, err := tokenizer.ForModel(tokenizer.Model(model))
 	if err != nil {
 		enc, _ = tokenizer.Get(tokenizer.Cl100kBase)
@@ -46,25 +40,6 @@ func countAllMessagesTokens(systemMessage *openai.ChatCompletionMessage, message
 		messages = append(messages, *systemMessage)
 	}
 	return countMessagesTokens(messages, model)
-}
-
-func _tokensConfiguration(model string) (ok bool, tokensPerMessage int, tokensPerName int) {
-	ok = true
-
-	switch model {
-	case openai.GPT3Dot5Turbo0301:
-		tokensPerMessage = 4 // every message follows <im_start>{role/name}\n{content}<im_end>\n
-		tokensPerName = -1   // if there's a name, the role is omitted
-	case openai.GPT3Dot5Turbo16K, constants.GPT4TurboPreview:
-		tokensPerMessage = 3
-		tokensPerName = 1
-	default:
-		// Not implemented
-		ok = false
-		return
-	}
-
-	return
 }
 
 func _countMessageTokens(enc tokenizer.Codec, tokensPerMessage int, tokensPerName int, message openai.ChatCompletionMessage) int {
